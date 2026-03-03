@@ -1,0 +1,26 @@
+name: com-Orkut
+file_type: .csv
+description:
+  Orkut online social network. Vertices represent users and undirected edges
+  represent friendships. One of the ground-truth community datasets from the
+  SNAP collection.
+author: A. Mislove, M. Marcon, K. Gummadi, P. Druschel, B. Bhattacharjee
+refs:
+  J. Yang, J. Leskovec. Defining and Evaluating Network Communities based
+  on Ground-truth. IEEE International Conference on Data Mining (ICDM),
+  2012.
+delim: "\t"
+header: None
+col_names:
+  - src
+  - dst
+col_types:
+  - int32
+  - int32
+has_loop: false
+is_directed: false
+is_multigraph: false
+is_symmetric: true
+number_of_edges: 117185083
+number_of_nodes: 3072441
+url: https://data.rapids.ai/cugraph/datasets/com-Orkut.csv

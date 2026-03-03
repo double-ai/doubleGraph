@@ -1,0 +1,117 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "c_test_utils.h" /* RUN_TEST */
+
+#include <cugraph_c/algorithms.h>
+#include <cugraph_c/graph.h>
+
+#include <math.h>
+
+typedef int32_t vertex_t;
+typedef int32_t edge_t;
+typedef float weight_t;
+
+int generic_scc_test(vertex_t* h_src,
+                     vertex_t* h_dst,
+                     weight_t* h_wgt,
+                     vertex_t* h_result,
+                     size_t num_vertices,
+                     size_t num_edges,
+                     bool_t store_transposed)
+{
+  int test_ret_value = 0;
+
+  cugraph_error_code_t ret_code = CUGRAPH_SUCCESS;
+  cugraph_error_t* ret_error;
+
+  cugraph_resource_handle_t* p_handle = NULL;
+  cugraph_graph_t* p_graph            = NULL;
+  cugraph_labeling_result_t* p_result = NULL;
+
+  p_handle = cugraph_create_resource_handle(NULL);
+  TEST_ASSERT(test_ret_value, p_handle != NULL, "resource handle creation failed.");
+
+  ret_code = create_test_graph(
+    p_handle, h_src, h_dst, h_wgt, num_edges, store_transposed, FALSE, FALSE, &p_graph, &ret_error);
+
+  TEST_ASSERT(test_ret_value, ret_code == CUGRAPH_SUCCESS, "create_test_graph failed.");
+  TEST_ASSERT(test_ret_value, ret_code == CUGRAPH_SUCCESS, cugraph_error_message(ret_error));
+
+  ret_code = cugraph_strongly_connected_components(p_handle, p_graph, FALSE, &p_result, &ret_error);
+
+  // FIXME: Actual implementation will be something like this
+  TEST_ASSERT(test_ret_value, ret_code == CUGRAPH_SUCCESS, cugraph_error_message(ret_error));
+  TEST_ASSERT(
+    test_ret_value, ret_code == CUGRAPH_SUCCESS, "cugraph_strongly_connected_components failed.");
+
+  cugraph_type_erased_device_array_view_t* vertices;
+  cugraph_type_erased_device_array_view_t* components;
+
+  vertices   = cugraph_labeling_result_get_vertices(p_result);
+  components = cugraph_labeling_result_get_labels(p_result);
+
+  vertex_t h_vertices[num_vertices];
+  vertex_t h_components[num_vertices];
+
+  ret_code = cugraph_type_erased_device_array_view_copy_to_host(
+    p_handle, (byte_t*)h_vertices, vertices, &ret_error);
+  TEST_ASSERT(test_ret_value, ret_code == CUGRAPH_SUCCESS, "copy_to_host failed.");
+
+  ret_code = cugraph_type_erased_device_array_view_copy_to_host(
+    p_handle, (byte_t*)h_components, components, &ret_error);
+  TEST_ASSERT(test_ret_value, ret_code == CUGRAPH_SUCCESS, "copy_to_host failed.");
+
+  vertex_t component_check[num_vertices];
+  for (vertex_t i = 0; i < num_vertices; ++i) {
+    component_check[i] = num_vertices;
+  }
+
+  for (vertex_t i = 0; i < num_vertices; ++i) {
+    if (component_check[h_result[i]] == num_vertices)
+      component_check[h_result[i]] = h_components[i];
+  }
+
+  for (int i = 0; (i < num_vertices) && (test_ret_value == 0); ++i) {
+    TEST_ASSERT(test_ret_value,
+                h_components[i] == component_check[h_result[i]],
+                "component results don't match");
+  }
+
+  cugraph_type_erased_device_array_view_free(components);
+  cugraph_type_erased_device_array_view_free(vertices);
+  cugraph_labeling_result_free(p_result);
+
+  cugraph_graph_free(p_graph);
+  cugraph_free_resource_handle(p_handle);
+  cugraph_error_free(ret_error);
+
+  return test_ret_value;
+}
+
+int test_strongly_connected_components()
+{
+  size_t num_edges    = 19;
+  size_t num_vertices = 12;
+
+  vertex_t h_src[] = {0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 6, 7, 7, 8, 8, 8, 9, 10};
+  vertex_t h_dst[] = {1, 2, 3, 4, 0, 1, 3, 4, 5, 3, 5, 7, 9, 10, 6, 7, 9, 11, 11};
+  weight_t h_wgt[] = {
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+  vertex_t h_result[] = {0, 0, 0, 3, 3, 5, 6, 7, 8, 9, 10, 11};
+
+  // SCC wants store_transposed = FALSE
+  return generic_scc_test(h_src, h_dst, h_wgt, h_result, num_vertices, num_edges, FALSE);
+}
+
+/******************************************************************************/
+
+int main(int argc, char** argv)
+{
+  int result = 0;
+  result |= RUN_TEST(test_strongly_connected_components);
+  return result;
+}

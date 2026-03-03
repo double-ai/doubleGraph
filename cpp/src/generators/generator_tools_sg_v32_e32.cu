@@ -1,0 +1,73 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "generators/generator_tools.cuh"
+#include "generators/scramble.cuh"
+
+#include <cugraph/graph_generators.hpp>
+#include <cugraph/utilities/error.hpp>
+
+#include <raft/util/cuda_utils.cuh>
+
+#include <rmm/device_uvector.hpp>
+
+#include <cuda/std/iterator>
+#include <cuda/std/tuple>
+#include <thrust/copy.h>
+#include <thrust/execution_policy.h>
+#include <thrust/for_each.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/partition.h>
+#include <thrust/sort.h>
+#include <thrust/transform.h>
+#include <thrust/unique.h>
+
+#include <numeric>
+
+namespace cugraph {
+
+template rmm::device_uvector<int32_t> scramble_vertex_ids(raft::handle_t const& handle,
+                                                          rmm::device_uvector<int32_t>&& vertices,
+                                                          size_t lgN);
+
+template std::tuple<rmm::device_uvector<int32_t>,
+                    rmm::device_uvector<int32_t>,
+                    std::optional<rmm::device_uvector<float>>>
+combine_edgelists(raft::handle_t const& handle,
+                  std::vector<rmm::device_uvector<int32_t>>&& sources,
+                  std::vector<rmm::device_uvector<int32_t>>&& dests,
+                  std::optional<std::vector<rmm::device_uvector<float>>>&& optional_d_weights,
+                  bool remove_multi_edges);
+
+template std::tuple<rmm::device_uvector<int32_t>,
+                    rmm::device_uvector<int32_t>,
+                    std::optional<rmm::device_uvector<double>>>
+combine_edgelists(raft::handle_t const& handle,
+                  std::vector<rmm::device_uvector<int32_t>>&& sources,
+                  std::vector<rmm::device_uvector<int32_t>>&& dests,
+                  std::optional<std::vector<rmm::device_uvector<double>>>&& optional_d_weights,
+                  bool remove_multi_edges);
+
+template std::tuple<rmm::device_uvector<int32_t>,
+                    rmm::device_uvector<int32_t>,
+                    std::optional<rmm::device_uvector<float>>>
+symmetrize_edgelist_from_triangular(raft::handle_t const& handle,
+                                    rmm::device_uvector<int32_t>&& d_src_v,
+                                    rmm::device_uvector<int32_t>&& d_dst_v,
+                                    std::optional<rmm::device_uvector<float>>&& d_weight_v,
+                                    bool check_diagonal,
+                                    std::optional<large_buffer_type_t> large_buffer_type);
+
+template std::tuple<rmm::device_uvector<int32_t>,
+                    rmm::device_uvector<int32_t>,
+                    std::optional<rmm::device_uvector<double>>>
+symmetrize_edgelist_from_triangular(raft::handle_t const& handle,
+                                    rmm::device_uvector<int32_t>&& d_src_v,
+                                    rmm::device_uvector<int32_t>&& d_dst_v,
+                                    std::optional<rmm::device_uvector<double>>&& d_weight_v,
+                                    bool check_diagonal,
+                                    std::optional<large_buffer_type_t> large_buffer_type);
+
+}  // namespace cugraph

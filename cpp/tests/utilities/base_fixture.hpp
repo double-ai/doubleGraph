@@ -1,0 +1,252 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#pragma once
+
+#include "utilities/cxxopts.hpp"
+#include "utilities/mg_utilities.hpp"
+#include "utilities/test_graphs.hpp"
+
+#include <cugraph/utilities/error.hpp>
+
+#include <rmm/exec_policy.hpp>
+#include <rmm/mr/binning_memory_resource.hpp>
+#include <rmm/mr/cuda_memory_resource.hpp>
+#include <rmm/mr/managed_memory_resource.hpp>
+#include <rmm/mr/owning_wrapper.hpp>
+#include <rmm/mr/per_device_resource.hpp>
+#include <rmm/mr/pool_memory_resource.hpp>
+#include <rmm/resource_ref.hpp>
+
+#include <gtest/gtest.h>
+
+#include <limits>
+#include <optional>
+
+namespace cugraph {
+namespace test {
+
+// FIXME: The BaseFixture class is not used in any tests. This file is only needed for the
+// CUGRAPH_TEST_PROGRAM_MAIN macro and the code that it calls, so consider removing the BaseFixture
+// class and renaming this file, or moving CUGRAPH_TEST_PROGRAM_MAIN to the test_utilities.hpp file
+// and removing this file completely.
+
+/**
+ * @brief Base test fixture class from which all libcugraph tests should inherit.
+ *
+ * Example:
+ * ```
+ * class MyTestFixture : public cugraph::test::BaseFixture {};
+ * ```
+ **/
+class BaseFixture : public ::testing::Test {
+  rmm::device_async_resource_ref _mr{rmm::mr::get_current_device_resource()};
+
+ public:
+  /**
+   * @brief Returns pointer to `device_memory_resource` that should be used for all tests inheriting
+   *from this fixture
+   **/
+  rmm::device_async_resource_ref mr() { return _mr; }
+};
+
+/// MR factory functions
+inline auto make_cuda() { return std::make_shared<rmm::mr::cuda_memory_resource>(); }
+
+inline auto make_managed() { return std::make_shared<rmm::mr::managed_memory_resource>(); }
+
+// use_max set to true will use half of available GPU memory for RMM, otherwise
+// otherwise we'll use 1/10.
+inline auto make_pool(bool use_max = false)
+{
+  // Reduce the default pool allocation to 1/10 of GPU memory so that we can
+  // run more than 2 tests in parallel at the same time. Changes to this value could
+  // effect the maximum amount of parallel tests, and therefore `tests/CMakeLists.txt`
+  // `_CUGRAPH_TEST_PERCENT` default value will need to be audited.
+  auto const [free, total] = rmm::available_device_memory();
+  auto const min_alloc =
+    use_max ? rmm::align_down(std::min(free, total / 2), rmm::CUDA_ALLOCATION_ALIGNMENT)
+            : rmm::align_down(std::min(free, total / 10), rmm::CUDA_ALLOCATION_ALIGNMENT);
+  return rmm::mr::make_owning_wrapper<rmm::mr::pool_memory_resource>(make_cuda(), min_alloc);
+}
+
+inline auto make_binning()
+{
+  auto pool = make_pool();
+  // Add a fixed_size_memory_resource for bins of size 256, 512, 1024, 2048 and 4096KiB
+  // Larger allocations will use the pool resource
+  auto mr = rmm::mr::make_owning_wrapper<rmm::mr::binning_memory_resource>(pool, 18, 22);
+  return mr;
+}
+
+/**
+ * @brief Creates a memory resource for the unit test environment given the name of the allocation
+ * mode.
+ *
+ * The returned resource instance must be kept alive for the duration of the tests. Attaching the
+ * resource to a TestEnvironment causes issues since the environment objects are not destroyed until
+ * after the runtime is shutdown.
+ *
+ * @throw cugraph::logic_error if the `allocation_mode` is unsupported.
+ *
+ * @param allocation_mode String identifies which resource type.
+ *        Accepted types are "pool", "cuda", "managed" and
+ *        "maxpool" only.
+ * @return Memory resource instance
+ */
+inline std::shared_ptr<rmm::mr::device_memory_resource> create_memory_resource(
+  std::string const& allocation_mode)
+{
+  if (allocation_mode == "binning") return make_binning();
+  if (allocation_mode == "cuda") return make_cuda();
+  if (allocation_mode == "pool") return make_pool();
+  if (allocation_mode == "maxpool") return make_pool(true);
+  if (allocation_mode == "managed") return make_managed();
+  CUGRAPH_FAIL("Invalid RMM allocation mode");
+}
+
+// these variables are updated by command line arguments
+static bool g_perf{false};
+static std::optional<size_t> g_rmat_scale{std::nullopt};
+static std::optional<size_t> g_rmat_edge_factor{std::nullopt};
+static std::optional<std::string> g_test_file_name{std::nullopt};
+
+inline Rmat_Usecase override_Rmat_Usecase_with_cmd_line_arguments(Rmat_Usecase usecase)
+{
+  if (g_rmat_scale) { usecase.set_scale(*g_rmat_scale); }
+  if (g_rmat_edge_factor) { usecase.set_edge_factor(*g_rmat_edge_factor); }
+  return usecase;
+}
+
+inline File_Usecase override_File_Usecase_with_cmd_line_arguments(File_Usecase usecase)
+{
+  if (g_test_file_name) { usecase.set_filename(*g_test_file_name); }
+  return usecase;
+}
+
+template <typename T>
+inline std::tuple<T, Rmat_Usecase> override_Rmat_Usecase_with_cmd_line_arguments(
+  std::tuple<T, Rmat_Usecase> const& param)
+{
+  return std::make_tuple(std::get<0>(param),
+                         override_Rmat_Usecase_with_cmd_line_arguments(std::get<1>(param)));
+}
+
+template <typename T>
+inline std::tuple<T, File_Usecase> override_File_Usecase_with_cmd_line_arguments(
+  std::tuple<T, File_Usecase> const& param)
+{
+  return std::make_tuple(std::get<0>(param),
+                         override_File_Usecase_with_cmd_line_arguments(std::get<1>(param)));
+}
+
+}  // namespace test
+}  // namespace cugraph
+
+/**
+ * @brief Parses the cuGraph test command line options.
+ *
+ * Currently supports 'rmm_mode', 'perf', 'rmat_scale', and 'rmat_edge_factor'.
+ * 'rmm_mode` string paramater sets the rmm allocation mode. The default value of the parameter is
+ * 'pool'.
+ * `perf` boolean parameter enables performance measurements. The default value of the
+ * parameter is 'false' (if this option is not provided).
+ * 'rmat_scale' integer parameter overrides the hardcoded R-mat scale if provided.
+ * 'rmat_edge_factor' integer parameter overrides the hardcoded R-mat edge factor if provided.
+ *
+ * 'perf', 'rmat_scale', 'rmat_edge_factor' are added mainly to support C++ benchmarking (to
+ * override the input graph size through command line interface).
+ *
+ * Example:
+ * ```
+ * ./tests/PAGERANK_TEST --gtest_filter=rmat_benchmark_test/Tests_PageRank_Rmat.CheckInt32Int32*
+ * --rmm_mode=pool --perf --rmat_scale=25 --rmat_edge_factor=16
+ * ```
+ *
+ * @return Parsing results in the form of cxxopts::ParseResult
+ */
+inline auto parse_test_options(int argc, char** argv)
+{
+  try {
+    cxxopts::Options options(argv[0], " - cuGraph tests command line options");
+    options.allow_unrecognised_options().add_options()(
+      "rmm_mode", "RMM allocation mode", cxxopts::value<std::string>()->default_value("pool"))(
+      "perf", "enalbe performance measurements", cxxopts::value<bool>()->default_value("false"))(
+      "rmat_scale", "override the hardcoded R-mat scale", cxxopts::value<size_t>())(
+      "rmat_edge_factor", "override the hardcoded R-mat edge factor", cxxopts::value<size_t>())(
+      "test_file_name", "override the hardcoded test filename", cxxopts::value<std::string>());
+
+    return options.parse(argc, argv);
+  } catch (const cxxopts::OptionException& e) {
+    CUGRAPH_FAIL("Error parsing command line options");
+  }
+}
+
+/**
+ * @brief Macro that defines main function for gtest programs that use rmm
+ *
+ * Should be included in every test program that uses rmm allocators since it maintains the lifespan
+ * of the rmm default memory resource. This `main` function is a wrapper around the google test
+ * generated `main`, maintaining the original functionality. In addition, this custom `main`
+ * function parses the command line to customize test behavior, like the allocation mode used for
+ * creating the default memory resource.
+ */
+#define CUGRAPH_TEST_PROGRAM_MAIN()                                                     \
+  int main(int argc, char** argv)                                                       \
+  {                                                                                     \
+    ::testing::InitGoogleTest(&argc, argv);                                             \
+    auto const cmd_opts = parse_test_options(argc, argv);                               \
+    auto const rmm_mode = cmd_opts["rmm_mode"].as<std::string>();                       \
+    auto resource       = cugraph::test::create_memory_resource(rmm_mode);              \
+    rmm::mr::set_current_device_resource_ref(resource.get());                           \
+    cugraph::test::g_perf = cmd_opts["perf"].as<bool>();                                \
+    cugraph::test::g_rmat_scale =                                                       \
+      (cmd_opts.count("rmat_scale") > 0)                                                \
+        ? std::make_optional<size_t>(cmd_opts["rmat_scale"].as<size_t>())               \
+        : std::nullopt;                                                                 \
+    cugraph::test::g_rmat_edge_factor =                                                 \
+      (cmd_opts.count("rmat_edge_factor") > 0)                                          \
+        ? std::make_optional<size_t>(cmd_opts["rmat_edge_factor"].as<size_t>())         \
+        : std::nullopt;                                                                 \
+    cugraph::test::g_test_file_name =                                                   \
+      (cmd_opts.count("test_file_name") > 0)                                            \
+        ? std::make_optional<std::string>(cmd_opts["test_file_name"].as<std::string>()) \
+        : std::nullopt;                                                                 \
+                                                                                        \
+    return RUN_ALL_TESTS();                                                             \
+  }
+
+#define CUGRAPH_MG_TEST_PROGRAM_MAIN()                                                  \
+  int main(int argc, char** argv)                                                       \
+  {                                                                                     \
+    cugraph::test::initialize_mpi(argc, argv);                                          \
+    auto comm_rank = cugraph::test::query_mpi_comm_world_rank();                        \
+    auto comm_size = cugraph::test::query_mpi_comm_world_size();                        \
+    int num_gpus_per_node{};                                                            \
+    RAFT_CUDA_TRY(cudaGetDeviceCount(&num_gpus_per_node));                              \
+    RAFT_CUDA_TRY(cudaSetDevice(comm_rank % num_gpus_per_node));                        \
+    ::testing::InitGoogleTest(&argc, argv);                                             \
+    auto const cmd_opts = parse_test_options(argc, argv);                               \
+    auto const rmm_mode = cmd_opts["rmm_mode"].as<std::string>();                       \
+    auto resource       = cugraph::test::create_memory_resource(rmm_mode);              \
+    rmm::mr::set_current_device_resource_ref(resource.get());                           \
+    cugraph::test::g_perf = cmd_opts["perf"].as<bool>();                                \
+    cugraph::test::g_rmat_scale =                                                       \
+      (cmd_opts.count("rmat_scale") > 0)                                                \
+        ? std::make_optional<size_t>(cmd_opts["rmat_scale"].as<size_t>())               \
+        : std::nullopt;                                                                 \
+    cugraph::test::g_rmat_edge_factor =                                                 \
+      (cmd_opts.count("rmat_edge_factor") > 0)                                          \
+        ? std::make_optional<size_t>(cmd_opts["rmat_edge_factor"].as<size_t>())         \
+        : std::nullopt;                                                                 \
+    cugraph::test::g_test_file_name =                                                   \
+      (cmd_opts.count("test_file_name") > 0)                                            \
+        ? std::make_optional<std::string>(cmd_opts["test_file_name"].as<std::string>()) \
+        : std::nullopt;                                                                 \
+                                                                                        \
+    auto ret = RUN_ALL_TESTS();                                                         \
+    cugraph::test::finalize_mpi();                                                      \
+    return ret;                                                                         \
+  }

@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+from pylibcugraph import leiden as pylibcugraph_leiden
+from pylibcugraph import ResourceHandle
+from cugraph.structure import Graph
+import cudf
+from typing import Tuple
+
+
+def leiden(
+    G: Graph,
+    max_iter: int = 100,
+    resolution: float = 1.0,
+    random_state: int = None,
+    theta: int = 1.0,
+) -> Tuple[cudf.DataFrame, float]:
+    """
+    Compute the modularity optimizing partition of the input graph using the
+    Leiden algorithm
+
+    It uses the Leiden method described in:
+
+    Traag, V. A., Waltman, L., & van Eck, N. J. (2019). From Louvain to Leiden:
+    guaranteeing well-connected communities. Scientific reports, 9(1), 5233.
+    doi: 10.1038/s41598-019-41695-z
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        cuGraph graph descriptor of type Graph
+
+        The current implementation only supports undirected weighted graphs.
+
+        The adjacency list will be computed if not already present.
+
+    max_iter : integer, optional (default=100)
+        This controls the maximum number of levels/iterations of the Leiden
+        algorithm. When specified the algorithm will terminate after no more
+        than the specified number of iterations. No error occurs when the
+        algorithm terminates early in this manner.
+
+    resolution: float, optional (default=1.0)
+        Called gamma in the modularity formula, this changes the size
+        of the communities.  Higher resolutions lead to more smaller
+        communities, lower resolutions lead to fewer larger communities.
+        Defaults to 1.
+
+    random_state: int, optional(default=None)
+        Random state to use when generating samples.  Optional argument,
+        defaults to a hash of process id, time, and hostname.
+
+    theta: float, optional (default=1.0)
+        Called theta in the Leiden algorithm, this is used to scale
+        modularity gain in Leiden refinement phase, to compute
+        the probability of joining a random leiden community.
+
+    Returns
+    -------
+    parts : cudf.DataFrame
+        GPU data frame of size V containing two columns the vertex id and the
+        partition id it is assigned to.
+
+        df['vertex'] : cudf.Series
+            Contains the vertex identifiers
+        df['partition'] : cudf.Series
+            Contains the partition assigned to the vertices
+
+    modularity_score : float
+        a floating point number containing the global modularity score of the
+        partitioning.
+
+    Examples
+    --------
+    >>> from cugraph.datasets import karate
+    >>> G = karate.get_graph(download=True)
+    >>> parts, modularity_score = cugraph.leiden(G)
+
+    """
+
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    vertex, partition, modularity_score = pylibcugraph_leiden(
+        resource_handle=ResourceHandle(),
+        random_state=random_state,
+        graph=G._plc_graph,
+        max_level=max_iter,
+        resolution=resolution,
+        theta=theta,
+        do_expensive_check=False,
+    )
+
+    df = cudf.DataFrame()
+    df["vertex"] = vertex
+    df["partition"] = partition
+
+    if G.renumbered:
+        parts = G.unrenumber(df, "vertex")
+    else:
+        parts = df
+
+    return parts, modularity_score

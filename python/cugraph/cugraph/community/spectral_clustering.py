@@ -1,0 +1,454 @@
+# SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+
+from pylibcugraph import (
+    balanced_cut_clustering as pylibcugraph_balanced_cut_clustering,
+    spectral_modularity_maximization as pylibcugraph_spectral_modularity_maximization,
+    analyze_clustering_modularity as pylibcugraph_analyze_clustering_modularity,
+    analyze_clustering_edge_cut as pylibcugraph_analyze_clustering_edge_cut,
+    analyze_clustering_ratio_cut as pylibcugraph_analyze_clustering_ratio_cut,
+)
+from pylibcugraph import ResourceHandle
+import cudf
+import numpy as np
+import warnings
+
+
+def spectralBalancedCutClustering(
+    G,
+    num_clusters,
+    num_eigen_vects=2,
+    evs_tolerance=0.00001,
+    evs_max_iter=100,
+    kmean_tolerance=0.00001,
+    kmean_max_iter=100,
+    random_state: int = None,
+):
+    """
+    Compute a clustering/partitioning of the given graph using the spectral
+    balanced cut method.
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        Graph descriptor
+
+    num_clusters : integer
+        Specifies the number of clusters to find, must be greater than 1
+
+    num_eigen_vects : integer, optional
+        Specifies the number of eigenvectors to use. Must be lower or equal to
+        num_clusters. Default is 2
+
+    evs_tolerance: float, optional
+        Specifies the tolerance to use in the eigensolver.
+        Default is 0.00001
+
+    evs_max_iter: integer, optional
+        Specifies the maximum number of iterations for the eigensolver.
+        Default is 100
+
+    kmean_tolerance: float, optional
+        Specifies the tolerance to use in the k-means solver.
+        Default is 0.00001
+
+    kmean_max_iter: integer, optional
+        Specifies the maximum number of iterations for the k-means solver.
+        Default is 100
+
+    random_state: int, optional
+        Random seed to use when making sampling calls.
+
+    Returns
+    -------
+    df : cudf.DataFrame
+        GPU data frame containing two cudf.Series of size V: the vertex
+        identifiers and the corresponding cluster assignments.
+
+        df['vertex'] : cudf.Series
+            contains the vertex identifiers
+        df['cluster'] : cudf.Series
+            contains the cluster assignments
+
+    """
+    warnings.warn(
+        "spectralBalancedCutClustering is deprecated and will be removed in a future "
+        "release. Use spectralModularityMaximizationClustering instead.",
+        FutureWarning,
+    )
+
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    # Error checking in C++ code
+
+    # Check if vertex type is "int32"
+    if (
+        G.edgelist.edgelist_df.dtypes.iloc[0] != np.int32
+        or G.edgelist.edgelist_df.dtypes.iloc[1] != np.int32
+    ):
+        raise ValueError(
+            "'spectralBalancedCutClustering' requires the input graph's vertex to be "
+            "of type 'int32'"
+        )
+    vertex, partition = pylibcugraph_balanced_cut_clustering(
+        ResourceHandle(),
+        G._plc_graph,
+        num_clusters,
+        num_eigen_vects,
+        evs_tolerance,
+        evs_max_iter,
+        kmean_tolerance,
+        kmean_max_iter,
+        do_expensive_check=False,
+        random_state=random_state,
+    )
+
+    df = cudf.DataFrame()
+    df["vertex"] = vertex
+    df["cluster"] = partition
+
+    if G.renumbered:
+        df = G.unrenumber(df, "vertex")
+
+    return df
+
+
+def spectralModularityMaximizationClustering(
+    G,
+    num_clusters,
+    num_eigen_vects=2,
+    evs_tolerance=0.00001,
+    evs_max_iter=100,
+    kmean_tolerance=0.00001,
+    kmean_max_iter=100,
+    random_state: int = None,
+):
+    """
+    Compute a clustering/partitioning of the given graph using the spectral
+    modularity maximization method.
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        cuGraph graph descriptor. This graph should have edge weights.
+
+    num_clusters : integer
+        Specifies the number of clusters to find
+
+    num_eigen_vects : integer, optional
+        Specifies the number of eigenvectors to use. Must be lower or equal to
+        num_clusters.  Default is 2
+
+    evs_tolerance: float, optional
+        Specifies the tolerance to use in the eigensolver.
+        Default is 0.00001
+
+    evs_max_iter: integer, optional
+        Specifies the maximum number of iterations for the eigensolver.
+        Default is 100
+
+    kmean_tolerance: float, optional
+        Specifies the tolerance to use in the k-means solver.
+        Default is 0.00001
+
+    kmean_max_iter: integer, optional
+        Specifies the maximum number of iterations for the k-means solver.
+        Default is 100
+
+    random_state: int, optional
+        Random seed to use when making sampling calls.
+
+    Returns
+    -------
+    df : cudf.DataFrame
+        GPU data frame containing two cudf.Series of size V: the vertex
+        identifiers and the corresponding cluster assignments.
+
+        df['vertex'] : cudf.Series
+            contains the vertex identifiers
+        df['cluster'] : cudf.Series
+            contains the cluster assignments
+
+    Examples
+    --------
+    >>> from cugraph.datasets import karate
+    >>> G = karate.get_graph(download=True)
+    >>> df = cugraph.spectralModularityMaximizationClustering(G, 5)
+
+    """
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    if (
+        G.edgelist.edgelist_df.dtypes.iloc[0] != np.int32
+        or G.edgelist.edgelist_df.dtypes.iloc[1] != np.int32
+    ):
+        raise ValueError(
+            "'spectralModularityMaximizationClustering' requires the input graph's "
+            "vertex to be of type 'int32'"
+        )
+
+    vertex, partition = pylibcugraph_spectral_modularity_maximization(
+        ResourceHandle(),
+        G._plc_graph,
+        num_clusters,
+        num_eigen_vects,
+        evs_tolerance,
+        evs_max_iter,
+        kmean_tolerance,
+        kmean_max_iter,
+        do_expensive_check=False,
+        random_state=random_state,
+    )
+
+    df = cudf.DataFrame()
+    df["vertex"] = vertex
+    df["cluster"] = partition
+
+    if G.renumbered:
+        df = G.unrenumber(df, "vertex")
+
+    return df
+
+
+def analyzeClustering_modularity(
+    G, n_clusters, clustering, vertex_col_name="vertex", cluster_col_name="cluster"
+):
+    """
+    Compute the modularity score for a given partitioning/clustering.
+    The assumption is that “clustering” is the results from a call
+    from a special clustering algorithm and contains columns named
+    “vertex” and “cluster”.
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        graph descriptor. This graph should have edge weights.
+
+    n_clusters : integer
+        Specifies the number of clusters in the given clustering
+
+    clustering : cudf.DataFrame
+        The cluster assignment to analyze.
+
+    vertex_col_name : str or list of str, optional (default='vertex')
+        The names of the column in the clustering dataframe identifying
+        the external vertex id
+
+    cluster_col_name : str, optional (default='cluster')
+        The name of the column in the clustering dataframe identifying
+        the cluster id
+
+    Returns
+    -------
+    score : float
+        The computed modularity score
+
+    Examples
+    --------
+    >>> from cugraph.datasets import karate
+    >>> G = karate.get_graph(download=True)
+    >>> df = cugraph.spectralModularityMaximizationClustering(G, 5)
+    >>> score = cugraph.analyzeClustering_modularity(G, 5, df)
+
+    """
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    if type(vertex_col_name) is list:
+        if not all(isinstance(name, str) for name in vertex_col_name):
+            raise Exception("vertex_col_name must be list of string")
+    elif type(vertex_col_name) is not str:
+        raise Exception("vertex_col_name must be a string")
+
+    if type(cluster_col_name) is not str:
+        raise Exception("cluster_col_name must be a string")
+
+    if (
+        G.edgelist.edgelist_df.dtypes.iloc[0] != np.int32
+        or G.edgelist.edgelist_df.dtypes.iloc[1] != np.int32
+    ):
+        raise ValueError(
+            "'analyzeClustering_modularity' requires the input graph's "
+            "vertex to be of type 'int32'"
+        )
+
+    if G.renumbered:
+        clustering = G.add_internal_vertex_id(
+            clustering, "vertex", vertex_col_name, drop=True
+        )
+
+    if clustering.dtypes.iloc[0] != np.int32 or clustering.dtypes.iloc[1] != np.int32:
+        raise ValueError(
+            "'analyzeClustering_modularity' requires both the clustering 'vertex' "
+            "and 'cluster' to be of type 'int32'"
+        )
+
+    score = pylibcugraph_analyze_clustering_modularity(
+        ResourceHandle(),
+        G._plc_graph,
+        n_clusters,
+        clustering["vertex"],
+        clustering[cluster_col_name],
+    )
+
+    return score
+
+
+def analyzeClustering_edge_cut(
+    G, n_clusters, clustering, vertex_col_name="vertex", cluster_col_name="cluster"
+):
+    """
+    Compute the edge cut score for a partitioning/clustering
+    The assumption is that “clustering” is the results from a call
+    from a special clustering algorithm and contains columns named
+    “vertex” and “cluster”.
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        cuGraph graph descriptor
+
+    n_clusters : integer
+        Specifies the number of clusters in the given clustering
+
+    clustering : cudf.DataFrame
+        The cluster assignment to analyze.
+
+    vertex_col_name : str, optional (default='vertex')
+        The name of the column in the clustering dataframe identifying
+        the external vertex id
+
+    cluster_col_name : str, optional (default='cluster')
+        The name of the column in the clustering dataframe identifying
+        the cluster id
+
+    Returns
+    -------
+    score : float
+        The computed edge cut score
+
+    Examples
+    --------
+    >>> from cugraph.datasets import karate
+    >>> G = karate.get_graph(download=True)
+    >>> df = cugraph.spectralModularityMaximizationClustering(G, 5)
+    >>> score = cugraph.analyzeClustering_edge_cut(G, 5, df)
+
+    """
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    if type(vertex_col_name) is list:
+        if not all(isinstance(name, str) for name in vertex_col_name):
+            raise Exception("vertex_col_name must be list of string")
+    elif type(vertex_col_name) is not str:
+        raise Exception("vertex_col_name must be a string")
+
+    if type(cluster_col_name) is not str:
+        raise Exception("cluster_col_name must be a string")
+
+    if (
+        G.edgelist.edgelist_df.dtypes.iloc[0] != np.int32
+        or G.edgelist.edgelist_df.dtypes.iloc[1] != np.int32
+    ):
+        raise ValueError(
+            "'analyzeClustering_edge_cut' requires the input graph's vertex to be "
+            "of type 'int32'"
+        )
+
+    if G.renumbered:
+        clustering = G.add_internal_vertex_id(
+            clustering, "vertex", vertex_col_name, drop=True
+        )
+
+    if clustering.dtypes.iloc[0] != np.int32 or clustering.dtypes.iloc[1] != np.int32:
+        raise ValueError(
+            "'analyzeClustering_edge_cut' requires both the clustering 'vertex' "
+            "and 'cluster' to be of type 'int32'"
+        )
+
+    score = pylibcugraph_analyze_clustering_edge_cut(
+        ResourceHandle(),
+        G._plc_graph,
+        n_clusters,
+        clustering["vertex"],
+        clustering[cluster_col_name],
+    )
+
+    return score
+
+
+def analyzeClustering_ratio_cut(
+    G, n_clusters, clustering, vertex_col_name="vertex", cluster_col_name="cluster"
+):
+    """
+    Compute the ratio cut score for a partitioning/clustering
+
+    Parameters
+    ----------
+    G : cugraph.Graph
+        cuGraph graph descriptor. This graph should have edge weights.
+
+    n_clusters : integer
+        Specifies the number of clusters in the given clustering
+
+    clustering : cudf.DataFrame
+        The cluster assignment to analyze.
+
+    vertex_col_name : str, optional (default='vertex')
+        The name of the column in the clustering dataframe identifying
+        the external vertex id
+
+    cluster_col_name : str, optional (default='cluster')
+        The name of the column in the clustering dataframe identifying
+        the cluster id
+
+    Returns
+    -------
+    score : float
+        The computed ratio cut score
+
+    Examples
+    --------
+    >>> from cugraph.datasets import karate
+    >>> G = karate.get_graph(download=True)
+    >>> df = cugraph.spectralModularityMaximizationClustering(G, 5)
+    >>> score = cugraph.analyzeClustering_ratio_cut(G, 5, df, 'vertex',
+    ...                                             'cluster')
+
+    """
+    if G.is_directed():
+        raise ValueError("input graph must be undirected")
+
+    if type(vertex_col_name) is list:
+        if not all(isinstance(name, str) for name in vertex_col_name):
+            raise Exception("vertex_col_name must be list of string")
+    elif type(vertex_col_name) is not str:
+        raise Exception("vertex_col_name must be a string")
+
+    if type(cluster_col_name) is not str:
+        raise Exception("cluster_col_name must be a string")
+
+    if G.renumbered:
+        clustering = G.add_internal_vertex_id(
+            clustering, "vertex", vertex_col_name, drop=True
+        )
+
+    if clustering.dtypes.iloc[0] != np.int32 or clustering.dtypes.iloc[1] != np.int32:
+        raise ValueError(
+            "'analyzeClustering_ratio_cut' requires both the clustering 'vertex' "
+            "and 'cluster' to be of type 'int32'"
+        )
+
+    score = pylibcugraph_analyze_clustering_ratio_cut(
+        ResourceHandle(),
+        G._plc_graph,
+        n_clusters,
+        clustering["vertex"],
+        clustering[cluster_col_name],
+    )
+
+    return score

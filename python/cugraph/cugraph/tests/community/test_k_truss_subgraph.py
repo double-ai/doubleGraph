@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+import gc
+
+import pytest
+import networkx as nx
+import numpy as np
+
+import cugraph
+from cugraph.testing import utils
+from cugraph.datasets import polbooks, karate_asymmetric
+
+
+# =============================================================================
+# Pytest Setup / Teardown - called for each test function
+# =============================================================================
+
+
+def setup_function():
+    gc.collect()
+
+
+# These ground truth files have been created by running the networkx ktruss
+# function on reference graphs. Currently networkx ktruss has an error such
+# that nx.k_truss(G,k-2) gives the expected result for running ktruss with
+# parameter k. This fix (https://github.com/networkx/networkx/pull/3713) is
+# currently in networkx master and will hopefully will make it to a release
+# soon.
+def ktruss_ground_truth(graph_file):
+    G = nx.read_edgelist(str(graph_file), nodetype=int, data=(("weight", float),))
+    df = nx.to_pandas_edgelist(G)
+    return df
+
+
+def compare_k_truss(k_truss_cugraph, k, ground_truth_file):
+    k_truss_nx = ktruss_ground_truth(ground_truth_file)
+
+    edgelist_df = k_truss_cugraph.view_edge_list()
+    src = edgelist_df["src"]
+    dst = edgelist_df["dst"]
+    wgt = edgelist_df["weight"]
+    assert len(edgelist_df) == len(k_truss_nx)
+    for i in range(len(src)):
+        has_edge = (
+            (k_truss_nx["source"] == src[i])
+            & (k_truss_nx["target"] == dst[i])
+            & np.isclose(k_truss_nx["weight"], wgt[i])
+        ).any()
+        has_opp_edge = (
+            (k_truss_nx["source"] == dst[i])
+            & (k_truss_nx["target"] == src[i])
+            & np.isclose(k_truss_nx["weight"], wgt[i])
+        ).any()
+        assert has_edge or has_opp_edge
+    return True
+
+
+@pytest.mark.sg
+@pytest.mark.parametrize("_, nx_ground_truth", utils.DATASETS_KTRUSS)
+def test_ktruss_subgraph_Graph(_, nx_ground_truth):
+    k = 5
+    G = polbooks.get_graph(download=True, create_using=cugraph.Graph(directed=False))
+    k_subgraph = cugraph.ktruss_subgraph(G, k, use_weights=False)
+
+    compare_k_truss(k_subgraph, k, nx_ground_truth)
+
+
+@pytest.mark.sg
+def test_ktruss_subgraph_directed_Graph():
+    k = 5
+    edgevals = True
+    G = karate_asymmetric.get_graph(
+        download=True,
+        create_using=cugraph.Graph(directed=True),
+        ignore_weights=not edgevals,
+    )
+    with pytest.raises(ValueError):
+        cugraph.k_truss(G, k)

@@ -1,0 +1,67 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#pragma once
+
+#include <cugraph/graph.hpp>
+#include <cugraph/utilities/dataframe_buffer.hpp>
+#include <cugraph/utilities/thrust_tuple_utils.hpp>
+
+#include <raft/core/device_span.hpp>
+#include <raft/core/handle.hpp>
+
+#include <rmm/exec_policy.hpp>
+
+#include <cuda/std/tuple>
+
+#include <unordered_map>
+#include <vector>
+
+namespace cugraph {
+
+template <typename edge_id_t,
+          typename edge_type_t,
+          typename vertex_t,
+          typename value_t = cuda::std::tuple<vertex_t, vertex_t>>
+class lookup_container_t {
+  template <typename _edge_id_t, typename _edge_type_t, typename _vertex_t, typename _value_t>
+  struct lookup_container_impl;
+  std::unique_ptr<lookup_container_impl<edge_id_t, edge_type_t, vertex_t, value_t>> pimpl;
+
+ public:
+  using edge_id_type   = edge_id_t;
+  using edge_type_type = edge_type_t;
+  using value_type     = value_t;
+
+  static_assert(std::is_integral_v<edge_id_t>);
+  static_assert(std::is_integral_v<edge_type_t>);
+  static_assert(is_thrust_tuple_of_integral<value_t>::value);
+
+  ~lookup_container_t();
+  lookup_container_t();
+  lookup_container_t(raft::handle_t const& handle,
+                     std::vector<edge_type_t> types,
+                     std::vector<edge_id_t> type_counts);
+
+  lookup_container_t(lookup_container_t&& other);
+  lookup_container_t& operator=(lookup_container_t&& other);
+  void insert(raft::handle_t const& handle,
+              edge_type_t typ,
+              raft::device_span<edge_id_t const> edge_ids_to_insert,
+              dataframe_buffer_type_t<value_t>&& values_to_insert);
+
+  dataframe_buffer_type_t<value_t> lookup_from_edge_ids_and_single_type(
+    raft::handle_t const& handle,
+    raft::device_span<edge_id_t const> edge_ids_to_lookup,
+    edge_type_t edge_type_to_lookup,
+    bool multi_gpu) const;
+
+  dataframe_buffer_type_t<value_t> lookup_from_edge_ids_and_types(
+    raft::handle_t const& handle,
+    raft::device_span<edge_id_t const> edge_ids_to_lookup,
+    raft::device_span<edge_type_t const> edge_types_to_lookup,
+    bool multi_gpu) const;
+};
+
+}  // namespace cugraph

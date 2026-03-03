@@ -1,0 +1,69 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#pragma once
+
+#include <cugraph_c/error.h>
+#include <cugraph_c/types.h>
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct cugraph_resource_handle_ {
+  int32_t align_;
+} cugraph_resource_handle_t;
+
+// FIXME: Don't really want a raft handle here.  We really want to be able to
+//        configure the resource handle ourselves.  But that requires a bunch
+//        of logic that's currently only available in python.
+/**
+ * @brief     Construct a resource handle
+ *
+ * @param [in]  raft_handle   Handle for accessing resources
+ *                            If NULL, we will create a raft handle
+ *                            internally
+ *
+ * @return A graph resource handle
+ */
+cugraph_resource_handle_t* cugraph_create_resource_handle(void* raft_handle);
+
+/**
+ * @brief get comm_size from resource handle
+ *
+ * If the resource handle has been configured for multi-gpu, this will return
+ * the comm_size for this cluster.  If the resource handle has not been configured for
+ * multi-gpu this will always return 1.
+ *
+ * @param [in]  handle          Handle for accessing resources
+ * @return comm_size
+ */
+int cugraph_resource_handle_get_comm_size(const cugraph_resource_handle_t* handle);
+
+/**
+ * @brief get rank from resource handle
+ *
+ * If the resource handle has been configured for multi-gpu, this will return
+ * the rank for this worker.  If the resource handle has not been configured for
+ * multi-gpu this will always return 0.
+ *
+ * @param [in]  handle          Handle for accessing resources
+ * @return rank
+ */
+int cugraph_resource_handle_get_rank(const cugraph_resource_handle_t* handle);
+
+/**
+ * @brief     Free resources in the resource handle
+ *
+ * @param [in]  handle          Handle for accessing resources
+ */
+void cugraph_free_resource_handle(cugraph_resource_handle_t* handle);
+
+#ifdef __cplusplus
+}
+#endif

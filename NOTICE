@@ -1,0 +1,22 @@
+This project, doubleGraph, is a derivative work based on NVIDIA cuGraph.
+Original Work: cuGraph
+Original Copyright: Copyright (c) 2018-2024, NVIDIA CORPORATION
+Original Repository: https://github.com/rapidsai/cugraph
+Original License: Apache License 2.0
+
+This derivative work contains modifications by AA-I Technologies Ltd.
+Modifications Copyright (c) 2025, AA-I Technologies Ltd.
+
+Modifications include:
+  - AAI integration and implementation layer.
+  - Several small routing changes for including masks in the Python bindings.
+  - Extensive benchmarking suite.
+  - Fixes to test suite.
+  - This distribution is provided without the original Git history.
+
+This project is licensed under the Apache License 2.0. See LICENSE file.
+
+Third-party component licenses are in thirdparty/LICENSES/ directory.
+
+NVIDIA, cuGraph, and RAPIDS are trademarks of NVIDIA Corporation.
+This project is not affiliated with, endorsed by, or sponsored by NVIDIA Corporation.

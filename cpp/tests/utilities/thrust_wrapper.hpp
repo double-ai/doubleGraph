@@ -1,0 +1,147 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#pragma once
+
+#include <cugraph/utilities/dataframe_buffer.hpp>
+
+#include <raft/core/device_span.hpp>
+#include <raft/core/handle.hpp>
+
+#include <rmm/device_uvector.hpp>
+
+#include <optional>
+#include <tuple>
+
+namespace cugraph {
+namespace test {
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> sort(
+  raft::handle_t const& handle, cugraph::dataframe_buffer_type_t<value_t> const& values);
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> sort(raft::handle_t const& handle,
+                                               cugraph::dataframe_buffer_type_t<value_t>&& values);
+
+template <typename value_t>
+std::tuple<cugraph::dataframe_buffer_type_t<value_t>, cugraph::dataframe_buffer_type_t<value_t>>
+sort(raft::handle_t const& handle,
+     cugraph::dataframe_buffer_type_t<value_t> const& first,
+     cugraph::dataframe_buffer_type_t<value_t> const& second);
+
+template <typename key_t, typename value_t>
+std::tuple<cugraph::dataframe_buffer_type_t<key_t>, cugraph::dataframe_buffer_type_t<value_t>>
+sort_by_key(raft::handle_t const& handle,
+            cugraph::dataframe_buffer_type_t<key_t> const& keys,
+            cugraph::dataframe_buffer_type_t<value_t> const& values);
+
+template <typename key_t, typename value_t>
+std::tuple<cugraph::dataframe_buffer_type_t<key_t>, cugraph::dataframe_buffer_type_t<value_t>>
+sort_by_key(raft::handle_t const& handle,
+            cugraph::dataframe_buffer_type_t<key_t>&& keys,
+            cugraph::dataframe_buffer_type_t<value_t>&& values);
+
+template <typename key_t, typename value_t>
+std::tuple<cugraph::dataframe_buffer_type_t<key_t>,
+           cugraph::dataframe_buffer_type_t<key_t>,
+           cugraph::dataframe_buffer_type_t<value_t>>
+sort_by_key(raft::handle_t const& handle,
+            cugraph::dataframe_buffer_type_t<key_t> const& first,
+            cugraph::dataframe_buffer_type_t<key_t> const& second,
+            cugraph::dataframe_buffer_type_t<value_t> const& values);
+
+template <typename key_t, typename value_t>
+std::tuple<cugraph::dataframe_buffer_type_t<key_t>, cugraph::dataframe_buffer_type_t<value_t>>
+reduce_by_key(raft::handle_t const& handle,
+              cugraph::dataframe_buffer_type_t<key_t> const& keys,
+              cugraph::dataframe_buffer_type_t<value_t> const& values,
+              size_t num_unique_keys);
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> replace(
+  raft::handle_t const& handle,
+  cugraph::dataframe_buffer_type_t<value_t>&& values,
+  value_t old_value,
+  value_t new_value);
+
+template <typename value_t>
+value_t reduce(raft::handle_t const& handle,
+               cugraph::dataframe_buffer_type_t<value_t> const& values,
+               value_t init_value);
+
+template <typename key_t, typename value_t>
+std::
+  tuple<cugraph::dataframe_buffer_type_t<key_t>, cugraph::dataframe_buffer_type_t<value_t>, size_t>
+  partition(raft::handle_t const& handle,
+            cugraph::dataframe_buffer_type_t<key_t>&& keys,
+            cugraph::dataframe_buffer_type_t<value_t>&& values,
+            cugraph::dataframe_buffer_type_t<value_t> const& pred_values);
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> unique(
+  raft::handle_t const& handle, cugraph::dataframe_buffer_type_t<value_t>&& values);
+
+template <typename value_t>
+size_t unique_count(raft::handle_t const& handle,
+                    cugraph::dataframe_buffer_type_t<value_t> const& values);
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> sequence(raft::handle_t const& handle,
+                                                   size_t length,
+                                                   size_t repeat_count,
+                                                   value_t init);
+
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> scalar_fill(raft::handle_t const& handle,
+                                                      size_t length,
+                                                      value_t value);
+
+// return (init + i) % modulo, where i = [0, length)
+template <typename value_t>
+cugraph::dataframe_buffer_type_t<value_t> modulo_sequence(raft::handle_t const& handle,
+                                                          size_t length,
+                                                          value_t modulo,
+                                                          value_t init);
+
+template <typename vertex_t>
+vertex_t max_element(raft::handle_t const& handle, raft::device_span<vertex_t const> vertices);
+
+template <typename vertex_t>
+void translate_vertex_ids(raft::handle_t const& handle,
+                          rmm::device_uvector<vertex_t>& vertices /* [INOUT] */,
+                          vertex_t vertex_id_offset);
+
+template <typename vertex_t>
+void populate_vertex_ids(raft::handle_t const& handle,
+                         rmm::device_uvector<vertex_t>& d_vertices_v /* [INOUT] */,
+                         vertex_t vertex_id_offset);
+
+template <typename idx_t, typename offset_t>
+void expand_sparse_offsets(raft::handle_t const& handle,
+                           raft::device_span<offset_t const> offsets,
+                           raft::device_span<idx_t> indices,
+                           offset_t base_offset,
+                           idx_t base_idx);
+
+template <typename idx_t, typename offset_t>
+void expand_hypersparse_offsets(raft::handle_t const& handle,
+                                raft::device_span<offset_t const> offsets,
+                                raft::device_span<idx_t const> nzd_indices,
+                                raft::device_span<idx_t> indices,
+                                offset_t base_offset);
+
+template <typename vertex_t>
+std::tuple<rmm::device_uvector<vertex_t>, rmm::device_uvector<vertex_t>> remove_self_loops(
+  raft::handle_t const& handle,
+  rmm::device_uvector<vertex_t>&& v1,
+  rmm::device_uvector<vertex_t>&& v2);
+
+template <typename T>
+bool device_spans_equal(raft::handle_t const& handle,
+                        raft::device_span<T const> array_left,
+                        raft::device_span<T const> array_right);
+
+}  // namespace test
+}  // namespace cugraph

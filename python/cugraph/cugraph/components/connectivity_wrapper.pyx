@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2019-2022, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+# cython: profile=False
+# distutils: language = c++
+# cython: embedsignature = True
+# cython: language_level = 3
+
+# Modifications Copyright (c) 2025, AA-I Technologies Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# NOTICE: This file has been modified by AA-I Technologies Ltd. from the original.
+from cugraph.components.connectivity cimport *
+from cugraph.structure.graph_primtypes cimport *
+from cugraph.structure.graph_utilities cimport *
+from cugraph.structure import utils_wrapper
+from cugraph.structure import graph_primtypes_wrapper
+from libc.stdint cimport uintptr_t
+from cugraph.structure.symmetrize import symmetrize
+from cugraph.structure.graph_classes import Graph as type_Graph
+import cudf
+import numpy as np
+
+
+def strongly_connected_components(input_graph):
+    """
+    Call connected_components
+    """
+    if not input_graph.adjlist:
+        input_graph.view_adj_list()
+
+    [offsets, indices] = graph_primtypes_wrapper.datatype_cast([input_graph.adjlist.offsets, input_graph.adjlist.indices], [np.int32])
+
+    # Use CSR dimensions directly: the offsets/indices arrays define the
+    # actual vertex and edge counts.  number_of_vertices() may return a
+    # smaller count (e.g. non-isolated vertices only) while the CSR covers
+    # the full vertex ID range, causing out-of-bounds GPU writes.
+    num_verts = len(offsets) - 1
+    num_edges = len(indices)
+
+    df = cudf.DataFrame()
+    df['vertex'] = cudf.Series(np.zeros(num_verts, dtype=np.int32))
+    df['labels'] = cudf.Series(np.zeros(num_verts, dtype=np.int32))
+
+    cdef uintptr_t c_offsets    = offsets.__cuda_array_interface__['data'][0]
+    cdef uintptr_t c_indices    = indices.__cuda_array_interface__['data'][0]
+    cdef uintptr_t c_identifier = df['vertex'].__cuda_array_interface__['data'][0];
+    cdef uintptr_t c_labels_val = df['labels'].__cuda_array_interface__['data'][0];
+
+    cdef GraphCSRView[int,int,float] g
+
+    g = GraphCSRView[int,int,float](<int*>c_offsets, <int*>c_indices, <float*>NULL, num_verts, num_edges)
+
+    cdef cugraph_cc_t connect_type=CUGRAPH_STRONG
+    connected_components(g, <cugraph_cc_t>connect_type, <int *>c_labels_val)
+
+    g.get_vertex_identifiers(<int*>c_identifier)
+
+    return df

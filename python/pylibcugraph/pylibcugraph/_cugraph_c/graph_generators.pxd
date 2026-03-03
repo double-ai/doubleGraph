@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+# Have cython use python 3 syntax
+# cython: language_level = 3
+
+from pylibcugraph._cugraph_c.types cimport (
+    cugraph_data_type_id_t,
+    bool_t,
+)
+from pylibcugraph._cugraph_c.resource_handle cimport (
+    cugraph_resource_handle_t,
+)
+from pylibcugraph._cugraph_c.error cimport (
+    cugraph_error_code_t,
+    cugraph_error_t,
+)
+from pylibcugraph._cugraph_c.array cimport (
+    cugraph_type_erased_device_array_view_t,
+    cugraph_type_erased_host_array_view_t,
+)
+from pylibcugraph._cugraph_c.random cimport (
+    cugraph_rng_state_t,
+)
+
+from pylibcugraph._cugraph_c.coo cimport (
+    cugraph_coo_t,
+    cugraph_coo_list_t,
+)
+
+cdef extern from "cugraph_c/graph_generators.h":
+    ctypedef enum cugraph_generator_distribution_t:
+        POWER_LAW
+        UNIFORM
+
+    cdef cugraph_error_code_t \
+        cugraph_generate_rmat_edgelist(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            size_t scale,
+            size_t num_edges,
+            double a,
+            double b,
+            double c,
+            bool_t clip_and_flip,
+            bool_t scramble_vertex_ids,
+            cugraph_coo_t** result,
+            cugraph_error_t** error
+        )
+
+    cdef cugraph_error_code_t \
+        cugraph_generate_rmat_edgelists(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            size_t n_edgelists,
+            size_t min_scale,
+            size_t max_scale,
+            size_t edge_factor,
+            cugraph_generator_distribution_t size_distribution,
+            cugraph_generator_distribution_t edge_distribution,
+            bool_t clip_and_flip,
+            bool_t scramble_vertex_ids,
+            cugraph_coo_list_t** result,
+            cugraph_error_t** error
+        )
+
+    cdef cugraph_error_code_t \
+        cugraph_generate_edge_weights(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            cugraph_coo_t* coo,
+            cugraph_data_type_id_t dtype,
+            double minimum_weight,
+            double maximum_weight,
+            cugraph_error_t** error
+        )
+
+    cdef cugraph_error_code_t \
+        cugraph_generate_edge_ids(
+            const cugraph_resource_handle_t* handle,
+            cugraph_coo_t* coo,
+            bool_t multi_gpu,
+            cugraph_error_t** error
+        )
+
+    cdef cugraph_error_code_t \
+        cugraph_generate_edge_types(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            cugraph_coo_t* coo,
+            int min_edge_type,
+            int max_edge_type,
+            cugraph_error_t** error
+        )

@@ -1,0 +1,3 @@
+--use_fast_math
+--maxrregcount=40
+--rdc=true

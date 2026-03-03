@@ -1,0 +1,556 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "c_api/abstract_functor.hpp"
+#include "c_api/capi_helper.hpp"
+#include "c_api/graph.hpp"
+#include "c_api/random.hpp"
+#include "c_api/resource_handle.hpp"
+#include "c_api/utils.hpp"
+
+#include <cugraph_c/algorithms.h>
+
+#include <cugraph/algorithms.hpp>
+#include <cugraph/detail/utility_wrappers.hpp>
+#include <cugraph/graph_functions.hpp>
+
+#include <optional>
+
+namespace cugraph {
+namespace c_api {
+
+struct cugraph_layout_result_t {
+  cugraph_type_erased_device_array_t* vertices_{nullptr};
+  cugraph_type_erased_device_array_t* x_axis_{nullptr};
+  cugraph_type_erased_device_array_t* y_axis_{nullptr};
+};
+
+}  // namespace c_api
+}  // namespace cugraph
+
+namespace {
+
+struct force_atlas2_functor : public cugraph::c_api::abstract_functor {
+  raft::handle_t const& handle_;
+  cugraph::c_api::cugraph_rng_state_t* rng_state_{nullptr};
+  cugraph::c_api::cugraph_graph_t* graph_{nullptr};
+  int max_iter_;
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* start_vertices_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* x_start_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* y_start_{};
+  bool outbound_attraction_distribution_{};
+  bool lin_log_mode_{};
+  bool prevent_overlapping_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_radius_vertices_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_radius_values_{};
+  double overlap_scaling_ratio_{};
+  double edge_weight_influence_{};
+  double jitter_tolerance_{};
+  bool barnes_hut_optimize_{};
+  double barnes_hut_theta_{};
+  double scaling_ratio_{};
+  bool strong_gravity_mode_{};
+  double gravity_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_mobility_vertices_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_mobility_values_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_mass_vertices_{};
+  cugraph::c_api::cugraph_type_erased_device_array_view_t const* vertex_mass_values_{};
+  bool verbose_{};
+  bool do_expensive_check_{};
+  cugraph::c_api::cugraph_layout_result_t* result_{};
+  ;
+
+  force_atlas2_functor(::cugraph_resource_handle_t const* handle,
+                       cugraph_rng_state_t* rng_state,
+                       ::cugraph_graph_t* graph,
+                       int max_iter,
+                       ::cugraph_type_erased_device_array_view_t const* start_vertices,
+                       ::cugraph_type_erased_device_array_view_t const* x_start,
+                       ::cugraph_type_erased_device_array_view_t const* y_start,
+                       bool outbound_attraction_distribution,
+                       bool lin_log_mode,
+                       bool prevent_overlapping,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_radius_vertices,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_radius_values,
+                       double overlap_scaling_ratio,
+                       double edge_weight_influence,
+                       double jitter_tolerance,
+                       bool barnes_hut_optimize,
+                       double barnes_hut_theta,
+                       double scaling_ratio,
+                       bool strong_gravity_mode,
+                       double gravity,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_mobility_vertices,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_mobility_values,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_mass_vertices,
+                       ::cugraph_type_erased_device_array_view_t const* vertex_mass_values,
+                       bool verbose,
+                       bool do_expensive_check)
+    : abstract_functor(),
+      handle_(*reinterpret_cast<cugraph::c_api::cugraph_resource_handle_t const*>(handle)->handle_),
+      rng_state_(reinterpret_cast<cugraph::c_api::cugraph_rng_state_t*>(rng_state)),
+      graph_(reinterpret_cast<cugraph::c_api::cugraph_graph_t*>(graph)),
+      max_iter_(max_iter),
+      start_vertices_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          start_vertices)),
+      x_start_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(x_start)),
+      y_start_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(y_start)),
+      outbound_attraction_distribution_(outbound_attraction_distribution),
+      lin_log_mode_(lin_log_mode),
+      prevent_overlapping_(prevent_overlapping),
+      vertex_radius_vertices_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_radius_vertices)),
+      vertex_radius_values_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_radius_values)),
+      overlap_scaling_ratio_(overlap_scaling_ratio),
+      edge_weight_influence_(edge_weight_influence),
+      jitter_tolerance_(jitter_tolerance),
+      barnes_hut_optimize_(barnes_hut_optimize),
+      barnes_hut_theta_(barnes_hut_theta),
+      scaling_ratio_(scaling_ratio),
+      strong_gravity_mode_(strong_gravity_mode),
+      gravity_(gravity),
+      vertex_mobility_vertices_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_mobility_vertices)),
+      vertex_mobility_values_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_mobility_values)),
+      vertex_mass_vertices_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_mass_vertices)),
+      vertex_mass_values_(
+        reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+          vertex_mass_values)),
+      verbose_(verbose),
+      do_expensive_check_(do_expensive_check)
+  {
+  }
+
+  template <typename vertex_t,
+            typename edge_t,
+            typename weight_t,
+            typename edge_type_t,
+            typename time_stamp_t,
+            bool store_transposed,
+            bool multi_gpu>
+  void operator()()
+  {
+    if constexpr (!cugraph::is_candidate<vertex_t, edge_t, weight_t>::value) {
+      unsupported();
+    } else if constexpr (multi_gpu) {
+      unsupported();
+    } else {
+      auto graph =
+        reinterpret_cast<cugraph::graph_t<vertex_t, edge_t, false, false>*>(graph_->graph_);
+
+      auto edge_weights =
+        reinterpret_cast<cugraph::edge_property_t<edge_t, weight_t>*>(graph_->edge_weights_);
+
+      auto number_map = reinterpret_cast<rmm::device_uvector<vertex_t>*>(graph_->number_map_);
+
+      auto graph_view          = graph->view();
+      auto edge_partition_view = graph_view.local_edge_partition_view();
+
+      rmm::device_uvector<weight_t> tmp_weights(0, handle_.get_stream());
+      if (edge_weights == nullptr) {
+        tmp_weights.resize(edge_partition_view.indices().size(), handle_.get_stream());
+        cugraph::detail::scalar_fill(handle_, tmp_weights.data(), tmp_weights.size(), weight_t{1});
+      }
+
+      // Decompress to edgelist
+
+      auto [srcs, dsts, wgts, edge_ids, edge_types] =
+        cugraph::decompress_to_edgelist<vertex_t, edge_t, weight_t, int32_t, false, multi_gpu>(
+          handle_,
+          graph_view,
+          (edge_weights != nullptr) ? std::make_optional(edge_weights->view()) : std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt);  // Renumber srcs and dsts to internal IDs by not passing number_map
+
+      cugraph::legacy::GraphCOOView<vertex_t, edge_t, weight_t> legacy_coo_graph_view(
+        const_cast<vertex_t*>(srcs.data()),
+        const_cast<vertex_t*>(dsts.data()),
+        (edge_weights == nullptr) ? tmp_weights.data() : const_cast<weight_t*>(wgts->data()),
+        graph->number_of_vertices(),
+        edge_partition_view.number_of_edges());
+
+      cugraph::internals::GraphBasedDimRedCallback* callback = nullptr;
+
+      rmm::device_uvector<float> pos(2 * (edge_partition_view.offsets().size() - 1),
+                                     handle_.get_stream());
+
+      std::optional<rmm::device_uvector<vertex_t>> cp_number_map{std::nullopt};
+
+      std::optional<rmm::device_uvector<vertex_t>> number_map_pos{std::nullopt};
+
+      rmm::device_uvector<vertex_t> start_vertices(0, handle_.get_stream());
+      rmm::device_uvector<float> x_start(0, handle_.get_stream());
+      rmm::device_uvector<float> y_start(0, handle_.get_stream());
+
+      rmm::device_uvector<vertex_t> vertex_radius_vertices(0, handle_.get_stream());
+      rmm::device_uvector<float> vertex_radius_values(0, handle_.get_stream());
+
+      rmm::device_uvector<vertex_t> vertex_mobility_vertices(0, handle_.get_stream());
+      rmm::device_uvector<float> vertex_mobility_values(0, handle_.get_stream());
+
+      rmm::device_uvector<vertex_t> vertex_mass_vertices(0, handle_.get_stream());
+      rmm::device_uvector<float> vertex_mass_values(0, handle_.get_stream());
+
+      if (x_start_ != nullptr) {
+        // re-order x_start and y_start based on internal vertex IDs
+        start_vertices.resize(start_vertices_->size_, handle_.get_stream());
+        x_start.resize(x_start_->size_, handle_.get_stream());
+        y_start.resize(y_start_->size_, handle_.get_stream());
+        raft::copy(start_vertices.data(),
+                   start_vertices_->as_type<vertex_t>(),
+                   start_vertices_->size_,
+                   handle_.get_stream());
+        raft::copy(
+          x_start.data(), x_start_->as_type<float>(), x_start_->size_, handle_.get_stream());
+        raft::copy(
+          y_start.data(), y_start_->as_type<float>(), y_start_->size_, handle_.get_stream());
+
+        cugraph::renumber_ext_vertices<vertex_t, multi_gpu>(
+          handle_,
+          start_vertices.data(),
+          start_vertices.size(),
+          number_map->data(),
+          graph_view.local_vertex_partition_range_first(),
+          graph_view.local_vertex_partition_range_last(),
+          do_expensive_check_);
+
+        cugraph::c_api::detail::sort_tuple_by_key(
+          handle_,
+          raft::device_span<vertex_t>{start_vertices.data(), start_vertices.size()},
+          std::make_tuple(raft::device_span<float>{x_start.data(), x_start.size()},
+                          raft::device_span<float>{y_start.data(), y_start.size()}));
+      }
+
+      if (vertex_radius_values_ != nullptr) {
+        // re-order vertex_radius_values based on internal vertex IDs
+        vertex_radius_vertices.resize(vertex_radius_vertices_->size_, handle_.get_stream());
+        vertex_radius_values.resize(vertex_radius_values_->size_, handle_.get_stream());
+        raft::copy(vertex_radius_vertices.data(),
+                   vertex_radius_vertices_->as_type<vertex_t>(),
+                   vertex_radius_vertices_->size_,
+                   handle_.get_stream());
+        raft::copy(vertex_radius_values.data(),
+                   vertex_radius_values_->as_type<float>(),
+                   vertex_radius_values_->size_,
+                   handle_.get_stream());
+
+        cugraph::renumber_ext_vertices<vertex_t, multi_gpu>(
+          handle_,
+          vertex_radius_vertices.data(),
+          vertex_radius_vertices.size(),
+          number_map->data(),
+          graph_view.local_vertex_partition_range_first(),
+          graph_view.local_vertex_partition_range_last(),
+          do_expensive_check_);
+
+        cugraph::c_api::detail::sort_by_key(
+          handle_,
+          raft::device_span<vertex_t>{vertex_radius_vertices.data(), vertex_radius_vertices.size()},
+          raft::device_span<float>{vertex_radius_values.data(), vertex_radius_values.size()});
+      }
+
+      if (vertex_mobility_values_ != nullptr) {
+        // re-order vertex_mobility based on internal vertex IDs
+        vertex_mobility_vertices.resize(vertex_mobility_vertices_->size_, handle_.get_stream());
+        vertex_mobility_values.resize(vertex_mobility_values_->size_, handle_.get_stream());
+        raft::copy(vertex_mobility_vertices.data(),
+                   vertex_mobility_vertices_->as_type<vertex_t>(),
+                   vertex_mobility_vertices_->size_,
+                   handle_.get_stream());
+        raft::copy(vertex_mobility_values.data(),
+                   vertex_mobility_values_->as_type<float>(),
+                   vertex_mobility_values_->size_,
+                   handle_.get_stream());
+
+        cugraph::renumber_ext_vertices<vertex_t, multi_gpu>(
+          handle_,
+          vertex_mobility_vertices.data(),
+          vertex_mobility_vertices.size(),
+          number_map->data(),
+          graph_view.local_vertex_partition_range_first(),
+          graph_view.local_vertex_partition_range_last(),
+          do_expensive_check_);
+
+        cugraph::c_api::detail::sort_by_key(
+          handle_,
+          raft::device_span<vertex_t>{vertex_mobility_vertices.data(),
+                                      vertex_mobility_vertices.size()},
+          raft::device_span<float>{vertex_mobility_values.data(), vertex_mobility_values.size()});
+      }
+
+      if (vertex_mass_values_ != nullptr) {
+        // re-order vertex_mass based on internal vertex IDs
+        vertex_mass_vertices.resize(vertex_mass_vertices_->size_, handle_.get_stream());
+        vertex_mass_values.resize(vertex_mass_values_->size_, handle_.get_stream());
+        raft::copy(vertex_mass_vertices.data(),
+                   vertex_mass_vertices_->as_type<vertex_t>(),
+                   vertex_mass_vertices_->size_,
+                   handle_.get_stream());
+        raft::copy(vertex_mass_values.data(),
+                   vertex_mass_values_->as_type<float>(),
+                   vertex_mass_values_->size_,
+                   handle_.get_stream());
+
+        cugraph::renumber_ext_vertices<vertex_t, multi_gpu>(
+          handle_,
+          vertex_mass_vertices.data(),
+          vertex_mass_vertices.size(),
+          number_map->data(),
+          graph_view.local_vertex_partition_range_first(),
+          graph_view.local_vertex_partition_range_last(),
+          do_expensive_check_);
+
+        cugraph::c_api::detail::sort_by_key(
+          handle_,
+          raft::device_span<vertex_t>{vertex_mass_vertices.data(), vertex_mass_vertices.size()},
+          raft::device_span<float>{vertex_mass_values.data(), vertex_mass_values.size()});
+      }
+
+      cugraph::force_atlas2<vertex_t, edge_t, weight_t>(
+        handle_,
+        rng_state_->rng_state_,
+        legacy_coo_graph_view,
+        pos.data(),
+        max_iter_,
+        x_start_ != nullptr ? x_start.data() : nullptr,
+        y_start_ != nullptr ? y_start.data() : nullptr,
+        outbound_attraction_distribution_,
+        lin_log_mode_,
+        prevent_overlapping_,
+        vertex_radius_values_ != nullptr ? vertex_radius_values.data() : nullptr,
+        overlap_scaling_ratio_,
+        edge_weight_influence_,
+        jitter_tolerance_,
+        barnes_hut_optimize_,
+        barnes_hut_theta_,
+        scaling_ratio_,
+        strong_gravity_mode_,
+        gravity_,
+        vertex_mobility_values_ != nullptr ? vertex_mobility_values.data() : nullptr,
+        vertex_mass_values_ != nullptr ? vertex_mass_values.data() : nullptr,
+        verbose_,
+        callback);
+
+      rmm::device_uvector<float> x_axis(graph_view.local_vertex_partition_range_size(),
+                                        handle_.get_stream());
+
+      rmm::device_uvector<float> y_axis(graph_view.local_vertex_partition_range_size(),
+                                        handle_.get_stream());
+
+      raft::copy(x_axis.data(), pos.data(), x_axis.size(), handle_.get_stream());
+
+      raft::copy(y_axis.data(), pos.data() + x_axis.size(), x_axis.size(), handle_.get_stream());
+
+      rmm::device_uvector<vertex_t> vertices(graph_view.local_vertex_partition_range_size(),
+                                             handle_.get_stream());
+      raft::copy(vertices.data(), number_map->data(), vertices.size(), handle_.get_stream());
+
+      result_ = new cugraph::c_api::cugraph_layout_result_t{
+        new cugraph::c_api::cugraph_type_erased_device_array_t(vertices, graph_->vertex_type_),
+        new cugraph::c_api::cugraph_type_erased_device_array_t(x_axis,
+                                                               cugraph_data_type_id_t::FLOAT32),
+        new cugraph::c_api::cugraph_type_erased_device_array_t(y_axis,
+                                                               cugraph_data_type_id_t::FLOAT32)};
+    }
+  }
+};
+
+}  // namespace
+
+extern "C" cugraph_type_erased_device_array_view_t* cugraph_layout_result_get_vertices(
+  cugraph::c_api::cugraph_layout_result_t* result)
+{
+  auto internal_pointer = reinterpret_cast<cugraph::c_api::cugraph_layout_result_t*>(result);
+  return reinterpret_cast<cugraph_type_erased_device_array_view_t*>(
+    internal_pointer->vertices_->view());
+}
+
+extern "C" cugraph_type_erased_device_array_view_t* cugraph_layout_result_get_x_axis(
+  cugraph::c_api::cugraph_layout_result_t* result)
+{
+  auto internal_pointer = reinterpret_cast<cugraph::c_api::cugraph_layout_result_t*>(result);
+  return reinterpret_cast<cugraph_type_erased_device_array_view_t*>(
+    internal_pointer->x_axis_->view());
+}
+
+extern "C" cugraph_type_erased_device_array_view_t* cugraph_layout_result_get_y_axis(
+  cugraph::c_api::cugraph_layout_result_t* result)
+{
+  auto internal_pointer = reinterpret_cast<cugraph::c_api::cugraph_layout_result_t*>(result);
+  return reinterpret_cast<cugraph_type_erased_device_array_view_t*>(
+    internal_pointer->y_axis_->view());
+}
+
+extern "C" void cugraph_layout_result_free(cugraph::c_api::cugraph_layout_result_t* result)
+{
+  auto internal_pointer = reinterpret_cast<cugraph::c_api::cugraph_layout_result_t*>(result);
+  delete internal_pointer->vertices_;
+  delete internal_pointer->x_axis_;
+  delete internal_pointer->y_axis_;
+  delete internal_pointer;
+}
+
+extern "C" cugraph_error_code_t cugraph_force_atlas2(
+  const cugraph_resource_handle_t* handle,
+  cugraph_rng_state_t* rng_state,
+  cugraph_graph_t* graph,
+  int max_iter,
+  const cugraph_type_erased_device_array_view_t* start_vertices,
+  const cugraph_type_erased_device_array_view_t* x_start,
+  const cugraph_type_erased_device_array_view_t* y_start,
+  bool_t outbound_attraction_distribution,
+  bool_t lin_log_mode,
+  bool_t prevent_overlapping,
+  const cugraph_type_erased_device_array_view_t* vertex_radius_vertices,
+  const cugraph_type_erased_device_array_view_t* vertex_radius_values,
+  double overlap_scaling_ratio,
+  double edge_weight_influence,
+  double jitter_tolerance,
+  bool_t barnes_hut_optimize,
+  double barnes_hut_theta,
+  double scaling_ratio,
+  bool_t strong_gravity_mode,
+  double gravity,
+  const cugraph_type_erased_device_array_view_t* vertex_mobility_vertices,
+  const cugraph_type_erased_device_array_view_t* vertex_mobility_values,
+  const cugraph_type_erased_device_array_view_t* vertex_mass_vertices,
+  const cugraph_type_erased_device_array_view_t* vertex_mass_values,
+  bool_t verbose,
+  bool_t do_expensive_check,
+  cugraph::c_api::cugraph_layout_result_t** result,
+  cugraph_error_t** error)
+{
+  CAPI_EXPECTS(((x_start == nullptr) && (y_start == nullptr) && start_vertices == nullptr) ||
+                 ((x_start != nullptr) && (y_start != nullptr) && (start_vertices != nullptr)),
+               CUGRAPH_INVALID_INPUT,
+               "start_vertices, x_start, y_start should all be NULL or specified.",
+               *error);
+  CAPI_EXPECTS(
+    ((vertex_radius_vertices == nullptr) && (vertex_radius_values == nullptr)) ||
+      ((vertex_radius_vertices != nullptr) && (vertex_radius_values != nullptr)),
+    CUGRAPH_INVALID_INPUT,
+    "Both vertex_radius_vertices and vertex_radius_values should either be NULL or specified.",
+    *error);
+  CAPI_EXPECTS(
+    ((vertex_mobility_vertices == nullptr) && (vertex_mobility_values == nullptr)) ||
+      ((vertex_mobility_vertices != nullptr) && (vertex_mobility_values != nullptr)),
+    CUGRAPH_INVALID_INPUT,
+    "Both vertex_mobility_vertices and vertex_mobility_values should either be NULL or specified.",
+    *error);
+  CAPI_EXPECTS(
+    ((vertex_mass_vertices == nullptr) && (vertex_mass_values == nullptr)) ||
+      ((vertex_mass_vertices != nullptr) && (vertex_mass_values != nullptr)),
+    CUGRAPH_INVALID_INPUT,
+    "Both vertex_mass_vertices and vertex_mass_values should either be NULL or specified.",
+    *error);
+
+  if (x_start != nullptr) {
+    CAPI_EXPECTS(
+      reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(x_start)
+          ->type_ == FLOAT32,
+      CUGRAPH_INVALID_INPUT,
+      "x_start should be of type float32",
+      *error);
+    CAPI_EXPECTS(
+      reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(y_start)
+          ->type_ == FLOAT32,
+      CUGRAPH_INVALID_INPUT,
+      "y_start should be of type float32",
+      *error);
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_graph_t*>(graph)->vertex_type_ ==
+                   reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                     start_vertices)
+                     ->type_,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex type of graph and start_vertices must match",
+                 *error);
+  }
+  if (vertex_radius_values != nullptr) {
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                   vertex_radius_values)
+                     ->type_ == FLOAT32,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex_radius_values should be of type float32",
+                 *error);
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_graph_t*>(graph)->vertex_type_ ==
+                   reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                     vertex_radius_vertices)
+                     ->type_,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex type of graph and vertex_radius_vertices must match",
+                 *error);
+  }
+  if (vertex_mobility_values != nullptr) {
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                   vertex_mobility_values)
+                     ->type_ == FLOAT32,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex_mobility_values should be of type float32",
+                 *error);
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_graph_t*>(graph)->vertex_type_ ==
+                   reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                     vertex_mobility_vertices)
+                     ->type_,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex type of graph and vertex_mobility_vertices must match",
+                 *error);
+  }
+  if (vertex_mass_values != nullptr) {
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                   vertex_mass_values)
+                     ->type_ == FLOAT32,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex_mass_values should be of type float32",
+                 *error);
+    CAPI_EXPECTS(reinterpret_cast<cugraph::c_api::cugraph_graph_t*>(graph)->vertex_type_ ==
+                   reinterpret_cast<cugraph::c_api::cugraph_type_erased_device_array_view_t const*>(
+                     vertex_mass_vertices)
+                     ->type_,
+                 CUGRAPH_INVALID_INPUT,
+                 "vertex type of graph and vertex_mass_vertices must match",
+                 *error);
+  }
+
+  force_atlas2_functor functor(handle,
+                               rng_state,
+                               graph,
+                               max_iter,
+                               start_vertices,
+                               x_start,
+                               y_start,
+                               outbound_attraction_distribution,
+                               lin_log_mode,
+                               prevent_overlapping,
+                               vertex_radius_vertices,
+                               vertex_radius_values,
+                               overlap_scaling_ratio,
+                               edge_weight_influence,
+                               jitter_tolerance,
+                               barnes_hut_optimize,
+                               barnes_hut_theta,
+                               scaling_ratio,
+                               strong_gravity_mode,
+                               gravity,
+                               vertex_mobility_vertices,
+                               vertex_mobility_values,
+                               vertex_mass_vertices,
+                               vertex_mass_values,
+                               verbose,
+                               do_expensive_check);
+
+  return cugraph::c_api::run_algorithm(graph, functor, result, error);
+}

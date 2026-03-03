@@ -1,0 +1,70 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ * Modifications Copyright (c) 2025, AA-I Technologies Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * NOTICE: This file has been modified by AA-I Technologies Ltd. from the original.
+ */
+
+#include "c_api/graph.hpp"
+
+#include <cugraph/graph_view.hpp>
+
+#include <raft/core/device_span.hpp>
+
+#include <rmm/device_uvector.hpp>
+
+namespace cugraph {
+namespace c_api {
+
+template <typename vertex_t, typename edge_t>
+rmm::device_uvector<vertex_t> expand_sparse_offsets(raft::device_span<edge_t const> offsets,
+                                                    vertex_t base_vertex_id,
+                                                    rmm::cuda_stream_view const& stream);
+
+template <typename GraphViewType, typename T>
+edge_property_t<typename GraphViewType::edge_type, T> create_constant_edge_property(
+  raft::handle_t const& handle, GraphViewType const& graph_view, T constant_value);
+
+/**
+ * @ingroup utility_wrappers_cpp
+ * @brief    Cast the values of a cugraph_type_erased_device_array_view_t to the new type
+ *
+ * @tparam      new_type_t     type of the value to operate on. Must be either int32_t or int64_t.
+ *
+ * @param[out]  output      device span to update with new data type
+ * @param[in]   input       cugraph_type_erased_device_array_view_t with initial data type
+ * @param[in]   stream_view  stream view
+ *
+ */
+template <typename new_type_t>
+void copy_or_transform(raft::device_span<new_type_t> output,
+                       cugraph_type_erased_device_array_view_t const* input,
+                       rmm::cuda_stream_view const& stream_view);
+
+template <typename vertex_t, typename edge_t, bool store_transposed, bool multi_gpu>
+void attach_edge_mask_if_present(
+  cugraph::graph_view_t<vertex_t, edge_t, store_transposed, multi_gpu>& graph_view,
+  cugraph::c_api::cugraph_graph_t const* graph)
+{
+  if (graph->data_mask_ != nullptr && graph->data_mask_->edge_mask_ != nullptr) {
+    auto edge_mask =
+      reinterpret_cast<cugraph::edge_property_t<edge_t, bool> const*>(graph->data_mask_->edge_mask_);
+    graph_view.attach_edge_mask(edge_mask->view());
+  }
+}
+
+}  // namespace c_api
+}  // namespace cugraph

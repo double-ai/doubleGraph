@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+## https://pre-commit.com/
+#
+# Before first use: `pre-commit install`
+# To run: `pre-commit run --all-files`
+exclude: '^thirdparty'
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        exclude: |
+          (?x)
+            ^notebooks/algorithms/layout/Force-Atlas2[.]ipynb$
+      - id: ruff-format
+  - repo: https://github.com/asottile/yesqa
+    rev: v1.3.0
+    hooks:
+      - id: yesqa
+        additional_dependencies:
+          - flake8==7.1.1
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v20.1.4
+    hooks:
+      - id: clang-format
+        types_or: [c, c++, cuda]
+        args: ["-fallback-style=none", "-style=file", "-i"]
+  - repo: https://github.com/rapidsai/pre-commit-hooks
+    rev: v1.2.1
+    hooks:
+      - id: verify-copyright
+        name: verify-copyright-cugraph
+        args: [--fix, --spdx]
+        files: |
+          (?x)
+            [.](cmake|c|cpp|cu|cuh|h|hpp|sh|pxd|py|pyx|rs|java)$|
+            CMakeLists[.]txt$|
+            CMakeLists_standalone[.]txt$|
+            [.]flake8[.]cython$|
+            meta[.]yaml$|
+            setup[.]cfg$|
+            pytest[.]ini$|
+            pyproject[.]toml$|
+            dependencies[.]yaml$|
+            recipe[.]yaml$|
+            ^[.]pre-commit-config[.]yaml$|
+            ^benchmarks/shared/build_cugraph_ucx/cugraph_ucx[.]dockerfile$|
+            ^[.]github/ISSUE_TEMPLATE/.*[.]yml$|
+            [.]flake8$
+        exclude: |
+          (?x)^(
+            python/cugraph/cugraph/tests/structure/test_hypergraph[.]py$|
+            python/cugraph/cugraph/structure/hypergraph[.]py$|
+            cpp/src/generators/scramble[.]cuh$|
+            cpp/tests/utilities/cxxopts[.]hpp$
+          )
+      - id: verify-copyright
+        name: verify-copyright-pygraphistry
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cugraph/cugraph/tests/structure/test_hypergraph[.]py$|
+            python/cugraph/cugraph/structure/hypergraph[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-iu
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSL-1.0"]
+        files: |
+          (?x)^(
+            cpp/src/generators/scramble[.]cuh$
+          )
+      - id: verify-copyright
+        name: verify-copyright-cxxopts
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            cpp/tests/utilities/cxxopts[.]hpp$
+          )
+      - id: verify-alpha-spec
+      - id: verify-codeowners
+        args: [--fix, --project-prefix=cugraph]
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.0
+    hooks:
+      - id: sphinx-lint
+        args: ["--enable=all", "--disable=line-too-long"]
+  - repo: https://github.com/rapidsai/dependency-file-generator
+    rev: v1.20.0
+    hooks:
+        - id: rapids-dependency-file-generator
+          args: ["--clean", "--warn-all", "--strict"]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning"]

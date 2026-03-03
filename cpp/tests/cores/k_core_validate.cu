@@ -1,0 +1,101 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <cugraph/graph_functions.hpp>
+#include <cugraph/graph_view.hpp>
+
+#include <raft/core/handle.hpp>
+#include <raft/util/cudart_utils.hpp>
+
+#include <rmm/device_uvector.hpp>
+#include <rmm/mr/cuda_memory_resource.hpp>
+
+#include <thrust/copy.h>
+#include <thrust/count.h>
+
+#include <gtest/gtest.h>
+
+namespace cugraph {
+namespace test {
+
+template <typename vertex_t, typename edge_t, typename weight_t>
+void check_correctness(
+  raft::handle_t const& handle,
+  graph_view_t<vertex_t, edge_t, false, false> const& graph_view,
+  std::optional<edge_property_view_t<edge_t, weight_t const*>> edge_weight_view,
+  rmm::device_uvector<edge_t> const& core_numbers,
+  std::tuple<rmm::device_uvector<vertex_t>,
+             rmm::device_uvector<vertex_t>,
+             std::optional<rmm::device_uvector<weight_t>>> const& subgraph,
+  size_t k)
+{
+  auto const& [subgraph_src, subgraph_dst, subgraph_wgt] = subgraph;
+
+  // Check that all edges in the subgraph are appropriate
+  auto error_count = thrust::count_if(
+    handle.get_thrust_policy(),
+    subgraph_src.begin(),
+    subgraph_src.end(),
+    [k, d_core_numbers = core_numbers.data()] __device__(auto v) { return d_core_numbers[v] < k; });
+
+  EXPECT_EQ(error_count, 0) << "source error count is non-zero";
+
+  error_count = thrust::count_if(
+    handle.get_thrust_policy(),
+    subgraph_dst.begin(),
+    subgraph_dst.end(),
+    [k, d_core_numbers = core_numbers.data()] __device__(auto v) { return d_core_numbers[v] < k; });
+
+  EXPECT_EQ(error_count, 0) << "destination error count is non-zero";
+
+  rmm::device_uvector<vertex_t> graph_src(0, handle.get_stream());
+  rmm::device_uvector<vertex_t> graph_dst(0, handle.get_stream());
+  std::optional<rmm::device_uvector<weight_t>> graph_wgt{std::nullopt};
+
+  std::tie(graph_src, graph_dst, graph_wgt, std::ignore, std::ignore) =
+    cugraph::decompress_to_edgelist(
+      handle,
+      graph_view,
+      edge_weight_view,
+      std::optional<edge_property_view_t<edge_t, edge_t const*>>{std::nullopt},
+      std::optional<cugraph::edge_property_view_t<edge_t, int32_t const*>>{std::nullopt},
+      std::optional<raft::device_span<vertex_t const>>{std::nullopt});
+
+  // Now we'll count how many edges should be in the subgraph
+  auto expected_edge_count =
+    thrust::count_if(handle.get_thrust_policy(),
+                     thrust::make_zip_iterator(graph_src.begin(), graph_dst.begin()),
+                     thrust::make_zip_iterator(graph_src.end(), graph_dst.end()),
+                     [k, d_core_numbers = core_numbers.data()] __device__(auto tuple) {
+                       vertex_t src = cuda::std::get<0>(tuple);
+                       vertex_t dst = cuda::std::get<1>(tuple);
+                       return ((d_core_numbers[src] >= k) && (d_core_numbers[dst] >= k));
+                     });
+
+  EXPECT_EQ(expected_edge_count, subgraph_src.size());
+}
+
+template void check_correctness(
+  raft::handle_t const& handle,
+  graph_view_t<int32_t, int32_t, false, false> const& graph_view,
+  std::optional<edge_property_view_t<int32_t, float const*>> edge_weight_view,
+  rmm::device_uvector<int32_t> const& core_numbers,
+  std::tuple<rmm::device_uvector<int32_t>,
+             rmm::device_uvector<int32_t>,
+             std::optional<rmm::device_uvector<float>>> const& subgraph,
+  size_t k);
+
+template void check_correctness(
+  raft::handle_t const& handle,
+  graph_view_t<int64_t, int64_t, false, false> const& graph_view,
+  std::optional<edge_property_view_t<int64_t, float const*>> edge_weight_view,
+  rmm::device_uvector<int64_t> const& core_numbers,
+  std::tuple<rmm::device_uvector<int64_t>,
+             rmm::device_uvector<int64_t>,
+             std::optional<rmm::device_uvector<float>>> const& subgraph,
+  size_t k);
+
+}  // namespace test
+}  // namespace cugraph

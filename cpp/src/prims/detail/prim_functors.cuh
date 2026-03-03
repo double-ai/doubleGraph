@@ -1,0 +1,134 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#pragma once
+
+#include <cugraph/edge_partition_device_view.cuh>
+
+namespace cugraph {
+
+namespace detail {
+
+template <typename key_t,
+          typename vertex_t,
+          typename src_value_t,
+          typename dst_value_t,
+          typename e_value_t,
+          bool store_transposed>
+struct const_true_e_op_t {
+  __device__ auto operator()(std::conditional_t<store_transposed, vertex_t, key_t> key_or_src,
+                             std::conditional_t<store_transposed, key_t, vertex_t> key_or_dst,
+                             src_value_t,
+                             dst_value_t,
+                             e_value_t) const
+  {
+    return true;
+  }
+};
+
+template <typename GraphViewType,
+          typename key_t,
+          typename EdgePartitionSrcValueInputWrapper,
+          typename EdgePartitionDstValueInputWrapper,
+          typename EdgePartitionEdgeValueInputWrapper,
+          typename EdgeOp>
+struct call_e_op_t {
+  edge_partition_device_view_t<typename GraphViewType::vertex_type,
+                               typename GraphViewType::edge_type,
+                               GraphViewType::is_multi_gpu> const& edge_partition{};
+  EdgePartitionSrcValueInputWrapper const& edge_partition_src_value_input{};
+  EdgePartitionDstValueInputWrapper const& edge_partition_dst_value_input{};
+  EdgePartitionEdgeValueInputWrapper const& edge_partition_e_value_input{};
+  EdgeOp const& e_op{};
+  key_t key{};
+  typename GraphViewType::vertex_type major_offset{};
+  typename GraphViewType::vertex_type const* indices{
+    nullptr};  // indices = edge_partition.incies() + edge_offset
+  typename GraphViewType::edge_type edge_offset{};
+
+  __device__ auto operator()(
+    typename GraphViewType::edge_type i /* index in key's neighbor list */) const
+  {
+    auto minor        = indices[i];
+    auto minor_offset = edge_partition.minor_offset_from_minor_nocheck(minor);
+    std::conditional_t<GraphViewType::is_storage_transposed,
+                       typename GraphViewType::vertex_type,
+                       key_t>
+      key_or_src{};
+    std::conditional_t<GraphViewType::is_storage_transposed,
+                       key_t,
+                       typename GraphViewType::vertex_type>
+      key_or_dst{};
+    if constexpr (GraphViewType::is_storage_transposed) {
+      key_or_src = minor;
+      key_or_dst = key;
+    } else {
+      key_or_src = key;
+      key_or_dst = minor;
+    }
+    auto src_offset = GraphViewType::is_storage_transposed ? minor_offset : major_offset;
+    auto dst_offset = GraphViewType::is_storage_transposed ? major_offset : minor_offset;
+    return e_op(key_or_src,
+                key_or_dst,
+                edge_partition_src_value_input.get(src_offset),
+                edge_partition_dst_value_input.get(dst_offset),
+                edge_partition_e_value_input.get(edge_offset + i));
+  }
+};
+
+template <typename edge_t>
+struct call_const_true_e_op_t {
+  __device__ auto operator()(edge_t i) const { return true; }
+};
+
+template <typename GraphViewType,
+          typename key_t,
+          typename EdgePartitionSrcValueInputWrapper,
+          typename EdgePartitionDstValueInputWrapper,
+          typename EdgePartitionEdgeValueInputWrapper,
+          typename EdgeOp>
+struct call_e_op_with_key_t {
+  edge_partition_device_view_t<typename GraphViewType::vertex_type,
+                               typename GraphViewType::edge_type,
+                               GraphViewType::is_multi_gpu> const& edge_partition{};
+  EdgePartitionSrcValueInputWrapper const& edge_partition_src_value_input{};
+  EdgePartitionDstValueInputWrapper const& edge_partition_dst_value_input{};
+  EdgePartitionEdgeValueInputWrapper const& edge_partition_e_value_input{};
+  EdgeOp const& e_op{};
+
+  __device__ auto operator()(
+    key_t key, typename GraphViewType::edge_type i /* index in edge_partition's edge list */) const
+  {
+    auto major        = thrust_tuple_get_or_identity<key_t, 0>(key);
+    auto major_offset = edge_partition.major_offset_from_major_nocheck(major);
+    auto minor        = *(edge_partition.indices() + i);
+    auto minor_offset = edge_partition.minor_offset_from_minor_nocheck(minor);
+    std::conditional_t<GraphViewType::is_storage_transposed,
+                       typename GraphViewType::vertex_type,
+                       key_t>
+      key_or_src{};
+    std::conditional_t<GraphViewType::is_storage_transposed,
+                       key_t,
+                       typename GraphViewType::vertex_type>
+      key_or_dst{};
+    if constexpr (GraphViewType::is_storage_transposed) {
+      key_or_src = minor;
+      key_or_dst = key;
+    } else {
+      key_or_src = key;
+      key_or_dst = minor;
+    }
+    auto src_offset = GraphViewType::is_storage_transposed ? minor_offset : major_offset;
+    auto dst_offset = GraphViewType::is_storage_transposed ? major_offset : minor_offset;
+    return e_op(key_or_src,
+                key_or_dst,
+                edge_partition_src_value_input.get(src_offset),
+                edge_partition_dst_value_input.get(dst_offset),
+                edge_partition_e_value_input.get(i));
+  }
+};
+
+}  // namespace detail
+
+}  // namespace cugraph

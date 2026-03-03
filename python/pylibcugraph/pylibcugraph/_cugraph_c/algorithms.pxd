@@ -1,0 +1,403 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+# Have cython use python 3 syntax
+# cython: language_level = 3
+
+from pylibcugraph._cugraph_c.types cimport (
+    bool_t,
+)
+from pylibcugraph._cugraph_c.resource_handle cimport (
+    cugraph_resource_handle_t,
+)
+from pylibcugraph._cugraph_c.error cimport (
+    cugraph_error_code_t,
+    cugraph_error_t,
+)
+from pylibcugraph._cugraph_c.random cimport (
+    cugraph_rng_state_t,
+)
+from pylibcugraph._cugraph_c.array cimport (
+    cugraph_type_erased_device_array_view_t,
+    cugraph_type_erased_host_array_view_t,
+)
+from pylibcugraph._cugraph_c.graph cimport (
+    cugraph_graph_t,
+)
+
+
+cdef extern from "cugraph_c/algorithms.h":
+    ###########################################################################
+    # paths and path extraction
+    ctypedef struct cugraph_paths_result_t:
+        pass
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_paths_result_get_vertices(
+            cugraph_paths_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_paths_result_get_distances(
+            cugraph_paths_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_paths_result_get_predecessors(
+            cugraph_paths_result_t* result
+        )
+
+    cdef void \
+        cugraph_paths_result_free(
+            cugraph_paths_result_t* result
+        )
+
+    ctypedef struct cugraph_extract_paths_result_t:
+        pass
+
+    cdef cugraph_error_code_t \
+        cugraph_extract_paths(
+            const cugraph_resource_handle_t* handle,
+            cugraph_graph_t* graph,
+            const cugraph_type_erased_device_array_view_t* sources,
+            const cugraph_paths_result_t* paths_result,
+            const cugraph_type_erased_device_array_view_t* destinations,
+            cugraph_extract_paths_result_t** result,
+            cugraph_error_t** error
+        )
+
+    cdef size_t \
+        cugraph_extract_paths_result_get_max_path_length(
+            cugraph_extract_paths_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_extract_paths_result_get_paths(
+            cugraph_extract_paths_result_t* result
+        )
+
+    cdef void \
+        cugraph_extract_paths_result_free(
+            cugraph_extract_paths_result_t* result
+        )
+
+    ###########################################################################
+    # bfs
+    cdef cugraph_error_code_t \
+        cugraph_bfs(
+            const cugraph_resource_handle_t* handle,
+            cugraph_graph_t* graph,
+            # FIXME: this may become const
+            cugraph_type_erased_device_array_view_t* sources,
+            bool_t direction_optimizing,
+            size_t depth_limit,
+            bool_t compute_predecessors,
+            bool_t do_expensive_check,
+            cugraph_paths_result_t** result,
+            cugraph_error_t** error
+        )
+
+    ###########################################################################
+    # sssp
+    cdef cugraph_error_code_t \
+        cugraph_sssp(
+            const cugraph_resource_handle_t* handle,
+            cugraph_graph_t* graph,
+            size_t source,
+            double cutoff,
+            bool_t compute_predecessors,
+            bool_t do_expensive_check,
+            cugraph_paths_result_t** result,
+            cugraph_error_t** error
+        )
+
+    ###########################################################################
+    # random_walks
+    ctypedef struct cugraph_random_walk_result_t:
+        pass
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_random_walk_result_get_paths(
+            cugraph_random_walk_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_random_walk_result_get_weights(
+            cugraph_random_walk_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_random_walk_result_get_path_sizes(
+            cugraph_random_walk_result_t* result
+        )
+
+    cdef size_t \
+        cugraph_random_walk_result_get_max_path_length(
+            cugraph_random_walk_result_t* result
+        )
+
+    cdef void \
+        cugraph_random_walk_result_free(
+            cugraph_random_walk_result_t* result
+        )
+
+
+    ###########################################################################
+    # sampling
+    ctypedef struct cugraph_sample_result_t:
+        pass
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_renumber_map(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_renumber_map_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_renumber_map(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_renumber_map_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    # Deprecated, use cugraph_sample_result_get_majors
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_sources(
+            const cugraph_sample_result_t* result
+        )
+
+    # Deprecated, use cugraph_sample_result_get_minors
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_destinations(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_majors(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_minors(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_major_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_index(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_weight(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_id(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_type(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_start_time(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_edge_end_time(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_hop(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_label_hop_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_label_type_hop_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_start_labels(
+            const cugraph_sample_result_t* result
+        )
+
+    # Deprecated
+    cdef cugraph_type_erased_device_array_view_t* \
+        cugraph_sample_result_get_offsets(
+            const cugraph_sample_result_t* result
+        )
+
+    cdef void \
+        cugraph_sample_result_free(
+            const cugraph_sample_result_t* result
+        )
+
+    # testing API - cugraph_sample_result_t instances are normally created only
+    # by sampling algos
+    cdef cugraph_error_code_t \
+        cugraph_test_sample_result_create(
+            const cugraph_resource_handle_t* handle,
+            const cugraph_type_erased_device_array_view_t* srcs,
+            const cugraph_type_erased_device_array_view_t* dsts,
+            const cugraph_type_erased_device_array_view_t* edge_id,
+            const cugraph_type_erased_device_array_view_t* edge_type,
+            const cugraph_type_erased_device_array_view_t* wgt,
+            const cugraph_type_erased_device_array_view_t* hop,
+            const cugraph_type_erased_device_array_view_t* label,
+            cugraph_sample_result_t** result,
+            cugraph_error_t** error
+        )
+
+    ctypedef struct cugraph_sampling_options_t:
+        pass
+
+    ctypedef enum cugraph_prior_sources_behavior_t:
+        DEFAULT=0
+        CARRY_OVER
+        EXCLUDE
+
+    ctypedef enum cugraph_compression_type_t:
+        COO=0
+        CSR
+        CSC
+        DCSR
+        DCSC
+
+    ctypedef enum cugraph_temporal_sampling_comparison_t:
+        STRICTLY_INCREASING=0
+        MONOTONICALLY_INCREASING
+        STRICTLY_DECREASING
+        MONOTONICALLY_DECREASING
+        LAST
+
+    cdef cugraph_error_code_t \
+        cugraph_sampling_options_create(
+            cugraph_sampling_options_t** options,
+            cugraph_error_t** error,
+        )
+
+    cdef void \
+        cugraph_sampling_set_temporal_sampling_comparison(
+            cugraph_sampling_options_t* options,
+            cugraph_temporal_sampling_comparison_t comparison,
+        )
+
+    cdef void \
+        cugraph_sampling_set_renumber_results(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_retain_seeds(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_with_replacement(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_return_hops(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_prior_sources_behavior(
+            cugraph_sampling_options_t* options,
+            cugraph_prior_sources_behavior_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_dedupe_sources(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_compress_per_hop(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_compression_type(
+            cugraph_sampling_options_t* options,
+            cugraph_compression_type_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_set_disjoint_sampling(
+            cugraph_sampling_options_t* options,
+            bool_t value,
+        )
+
+    cdef void \
+        cugraph_sampling_options_free(
+            cugraph_sampling_options_t* options,
+        )
+
+    # uniform random walks
+    cdef cugraph_error_code_t \
+        cugraph_uniform_random_walks(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            cugraph_graph_t* graph,
+            const cugraph_type_erased_device_array_view_t* start_vertices,
+            size_t max_length,
+            cugraph_random_walk_result_t** result,
+            cugraph_error_t** error
+        )
+
+    # biased random walks
+    cdef cugraph_error_code_t \
+        cugraph_biased_random_walks(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            cugraph_graph_t* graph,
+            const cugraph_type_erased_device_array_view_t* start_vertices,
+            size_t max_length,
+            cugraph_random_walk_result_t** result,
+            cugraph_error_t** error
+        )
+
+    # node2vec random walks
+    cdef cugraph_error_code_t \
+        cugraph_node2vec_random_walks(
+            const cugraph_resource_handle_t* handle,
+            cugraph_rng_state_t* rng_state,
+            cugraph_graph_t* graph,
+            const cugraph_type_erased_device_array_view_t* start_vertices,
+            size_t max_length,
+            double p,
+            double q,
+            cugraph_random_walk_result_t** result,
+            cugraph_error_t** error
+        )
